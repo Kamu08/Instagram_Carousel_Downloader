@@ -63,11 +63,27 @@ export function CaptionModal({ isOpen, onClose, slides }: CaptionModalProps) {
     }
   };
 
-  const handleCopy = () => {
+  const handleCopy = async () => {
     if (!generatedCaption) return;
-    navigator.clipboard.writeText(generatedCaption);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    try {
+      if (navigator?.clipboard?.writeText) {
+        await navigator.clipboard.writeText(generatedCaption);
+      } else {
+        const textarea = document.createElement('textarea');
+        textarea.value = generatedCaption;
+        textarea.style.position = 'fixed';
+        textarea.style.opacity = '0';
+        document.body.appendChild(textarea);
+        textarea.focus();
+        textarea.select();
+        document.execCommand('copy');
+        document.body.removeChild(textarea);
+      }
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch (e) {
+      console.warn('Clipboard write failed:', e);
+    }
   };
 
   const wordCount = generatedCaption ? generatedCaption.trim().split(/\s+/).length : 0;

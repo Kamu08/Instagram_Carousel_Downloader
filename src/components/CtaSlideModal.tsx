@@ -20,11 +20,11 @@ export function CtaSlideModal({
   onInsertSlide,
 }: CtaSlideModalProps) {
   const [template, setTemplate] = useState<'follow' | 'save' | 'cover'>('follow');
-  const [authorName, setAuthorName] = useState('Suyash Gupta');
-  const [authorHandle, setAuthorHandle] = useState('@suyashgupta');
+  const [authorName, setAuthorName] = useState('Kamal Sharma');
+  const [authorHandle, setAuthorHandle] = useState('@kamalsharma');
   const [headline, setHeadline] = useState('Found this helpful?');
-  const [subtitle, setSubtitle] = useState('Follow for more daily web dev & design breakdowns!');
-  const [tag, setTag] = useState('FULL-STACK TIPS');
+  const [subtitle, setSubtitle] = useState('Follow for more daily AI, RAG, Python & System Design insights!');
+  const [tag, setTag] = useState('TECH & AI TIPS');
 
   if (!isOpen) return null;
 

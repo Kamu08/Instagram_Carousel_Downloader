@@ -48,6 +48,10 @@ export default function Home() {
   const [linkedinOptions, setLinkedinOptions] = useState<LinkedInOptions>(DEFAULT_LINKEDIN_OPTIONS);
   const [isApplyingTransformations, setIsApplyingTransformations] = useState(false);
 
+  // Skip First / Last Slide Export State
+  const [skipFirstSlide, setSkipFirstSlide] = useState(false);
+  const [skipLastSlide, setSkipLastSlide] = useState(false);
+
   // Studio Features State
   const [theme, setTheme] = useState<'light' | 'dark'>('light');
   const [isCtaModalOpen, setIsCtaModalOpen] = useState(false);
@@ -85,6 +89,8 @@ export default function Home() {
     setProgressSteps(INITIAL_PROGRESS_STEPS);
     setSelectedSlide(null);
     setLinkedinOptions(DEFAULT_LINKEDIN_OPTIONS);
+    setSkipFirstSlide(false);
+    setSkipLastSlide(false);
   };
 
   const updateProgress = (stepId: string, status: ProcessingProgressStep['status'], detail?: string) => {
@@ -338,7 +344,7 @@ export default function Home() {
               isApplying={isApplyingTransformations}
             />
 
-            {/* Reorderable Carousel Preview Grid with Rotate/Flip, Cover Generator, Watermark & AI Captions */}
+            {/* Reorderable Carousel Preview Grid with Rotate/Flip, Cover Generator, Watermark, AI Captions & Skip Filters */}
             <CarouselGrid
               slides={slides}
               onSlidesChange={setSlides}
@@ -351,14 +357,22 @@ export default function Home() {
               onOpenCaptionModal={() => setIsCaptionModalOpen(true)}
               onOpenWatermarkModal={() => setIsWatermarkModalOpen(true)}
               onRemoveWatermark={handleRemoveWatermark}
+              skipFirstSlide={skipFirstSlide}
+              setSkipFirstSlide={setSkipFirstSlide}
+              skipLastSlide={skipLastSlide}
+              setSkipLastSlide={setSkipLastSlide}
             />
 
-            {/* Download Bottom Deck (PDF + ZIP + AI Caption + Watermark) */}
+            {/* Download Bottom Deck (PDF + ZIP + AI Caption + Watermark + Skip Filters) */}
             <DownloadSection
               slides={slides}
               onReset={resetState}
               onOpenCaptionModal={() => setIsCaptionModalOpen(true)}
               onOpenWatermarkModal={() => setIsWatermarkModalOpen(true)}
+              skipFirstSlide={skipFirstSlide}
+              setSkipFirstSlide={setSkipFirstSlide}
+              skipLastSlide={skipLastSlide}
+              setSkipLastSlide={setSkipLastSlide}
             />
           </div>
         )}

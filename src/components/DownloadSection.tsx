@@ -24,6 +24,10 @@ interface DownloadSectionProps {
   onReset: () => void;
   onOpenCaptionModal: () => void;
   onOpenWatermarkModal: () => void;
+  skipFirstSlide: boolean;
+  setSkipFirstSlide: (val: boolean) => void;
+  skipLastSlide: boolean;
+  setSkipLastSlide: (val: boolean) => void;
 }
 
 export function DownloadSection({
@@ -31,14 +35,14 @@ export function DownloadSection({
   onReset,
   onOpenCaptionModal,
   onOpenWatermarkModal,
+  skipFirstSlide,
+  setSkipFirstSlide,
+  skipLastSlide,
+  setSkipLastSlide,
 }: DownloadSectionProps) {
   const [isZipping, setIsZipping] = useState(false);
   const [isPdfGenerating, setIsPdfGenerating] = useState(false);
   const [downloadSuccessType, setDownloadSuccessType] = useState<'pdf' | 'zip' | null>(null);
-
-  // Skip First / Last Slide Export Options
-  const [skipFirstSlide, setSkipFirstSlide] = useState(false);
-  const [skipLastSlide, setSkipLastSlide] = useState(false);
 
   // Filter slides for export
   const exportSlides = slides.filter((_, idx) => {
@@ -143,13 +147,13 @@ export function DownloadSection({
 
       {/* 1. Skip First / Last Slide Export Options Bar */}
       {slides.length > 1 && (
-        <div className="p-3.5 rounded-2xl bg-[var(--bg-page)] border-2 border-[var(--border-ink)] flex flex-wrap items-center justify-between gap-3 text-xs font-display">
+        <div className="p-4 rounded-2xl bg-[var(--bg-page)] border-2 border-[var(--border-ink)] shadow-[2px_2px_0px_var(--shadow-ink)] flex flex-wrap items-center justify-between gap-3 text-xs font-display">
           <div className="flex items-center gap-2 text-[var(--text-main)] font-black">
             <SlidersHorizontal className="w-4 h-4 stroke-[2.5]" />
-            <span>Export Filter Options:</span>
+            <span className="text-sm">Export Slide Selection:</span>
           </div>
 
-          <div className="flex flex-wrap items-center gap-4">
+          <div className="flex flex-wrap items-center gap-3 sm:gap-4">
             {/* Skip First Slide Toggle */}
             <label className="flex items-center gap-2 cursor-pointer select-none font-bold text-[var(--text-main)] hover:text-[#F43F5E] transition-colors">
               <input
@@ -158,7 +162,9 @@ export function DownloadSection({
                 onChange={(e) => setSkipFirstSlide(e.target.checked)}
                 className="w-4 h-4 accent-[#1D1815] cursor-pointer rounded"
               />
-              <span>Skip First Slide (Cover)</span>
+              <span className={skipFirstSlide ? 'line-through text-[#F43F5E]' : ''}>
+                Skip First Slide (Cover)
+              </span>
             </label>
 
             {/* Skip Last Slide Toggle */}
@@ -169,14 +175,14 @@ export function DownloadSection({
                 onChange={(e) => setSkipLastSlide(e.target.checked)}
                 className="w-4 h-4 accent-[#1D1815] cursor-pointer rounded"
               />
-              <span>Skip Last Slide (Outro)</span>
+              <span className={skipLastSlide ? 'line-through text-[#F43F5E]' : ''}>
+                Skip Last Slide (Outro)
+              </span>
             </label>
 
-            {(skipFirstSlide || skipLastSlide) && (
-              <span className="font-marker text-xs px-2 py-0.5 rounded-full bg-[#FDE047] text-[#1D1815] border border-[#1D1815]">
-                Exporting {exportSlides.length} of {slides.length} slides
-              </span>
-            )}
+            <span className="font-marker text-xs px-2.5 py-0.5 rounded-full bg-[#FDE047] text-[#1D1815] border border-[#1D1815]">
+              {exportSlides.length} of {slides.length} slides selected
+            </span>
           </div>
         </div>
       )}

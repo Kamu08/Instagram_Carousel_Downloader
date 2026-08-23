@@ -1,69 +1,417 @@
-import Image from "next/image";
+'use client';
+
+import React, { useState, useEffect } from 'react';
+import { Navbar } from '@/components/Navbar';
+import { UrlInputForm } from '@/components/UrlInputForm';
+import { CarouselGrid } from '@/components/CarouselGrid';
+import { LinkedInControls } from '@/components/LinkedInControls';
+import { DownloadSection } from '@/components/DownloadSection';
+import { PreviewModal } from '@/components/PreviewModal';
+import { CtaSlideModal } from '@/components/CtaSlideModal';
+import { CoverSlideModal } from '@/components/CoverSlideModal';
+import { CaptionModal } from '@/components/CaptionModal';
+import { WatermarkModal } from '@/components/WatermarkModal';
+import { HistoryDrawer } from '@/components/HistoryDrawer';
+import { Footer } from '@/components/Footer';
+import {
+  CarouselSlide,
+  LinkedInOptions,
+  ProcessingProgressStep,
+} from '@/lib/types';
+import {
+  saveCarouselToHistory,
+  getSavedTheme,
+  saveTheme,
+} from '@/lib/storage';
+import { removeWatermarkFromAllSlides } from '@/lib/watermark';
+import { saveAs } from 'file-saver';
+
+const DEFAULT_LINKEDIN_OPTIONS: LinkedInOptions = {
+  preset: 'original',
+  fitMode: 'contain',
+  backgroundMode: 'white',
+};
+
+const INITIAL_PROGRESS_STEPS: ProcessingProgressStep[] = [
+  { id: '1', label: 'Fetching Instagram post & discovering slides...', status: 'pending' },
+  { id: '2', label: 'Downloading all carousel images...', status: 'pending' },
+  { id: '3', label: 'Converting images to PNG (HEIC / WebP / JPEG)...', status: 'pending' },
+  { id: '4', label: 'Preparing master files & studio preview...', status: 'pending' },
+];
 
 export default function Home() {
+  const [slides, setSlides] = useState<CarouselSlide[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [progressSteps, setProgressSteps] = useState<ProcessingProgressStep[]>(INITIAL_PROGRESS_STEPS);
+  const [selectedSlide, setSelectedSlide] = useState<CarouselSlide | null>(null);
+  const [linkedinOptions, setLinkedinOptions] = useState<LinkedInOptions>(DEFAULT_LINKEDIN_OPTIONS);
+  const [isApplyingTransformations, setIsApplyingTransformations] = useState(false);
+
+  // Studio Features State
+  const [theme, setTheme] = useState<'light' | 'dark'>('light');
+  const [isCtaModalOpen, setIsCtaModalOpen] = useState(false);
+  const [isCoverModalOpen, setIsCoverModalOpen] = useState(false);
+  const [isCaptionModalOpen, setIsCaptionModalOpen] = useState(false);
+  const [isWatermarkModalOpen, setIsWatermarkModalOpen] = useState(false);
+  const [isHistoryDrawerOpen, setIsHistoryDrawerOpen] = useState(false);
+
+  // Initialize theme from storage
+  useEffect(() => {
+    const saved = getSavedTheme();
+    setTheme(saved);
+    if (saved === 'dark') {
+      document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+    }
+  }, []);
+
+  const handleToggleTheme = () => {
+    const next = theme === 'light' ? 'dark' : 'light';
+    setTheme(next);
+    saveTheme(next);
+    if (next === 'dark') {
+      document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+    }
+  };
+
+  const resetState = () => {
+    setSlides([]);
+    setIsLoading(false);
+    setErrorMessage(null);
+    setProgressSteps(INITIAL_PROGRESS_STEPS);
+    setSelectedSlide(null);
+    setLinkedinOptions(DEFAULT_LINKEDIN_OPTIONS);
+  };
+
+  const updateProgress = (stepId: string, status: ProcessingProgressStep['status'], detail?: string) => {
+    setProgressSteps((prev) =>
+      prev.map((s) => (s.id === stepId ? { ...s, status, detail } : s))
+    );
+  };
+
+  const handleFetchUrl = async (url: string) => {
+    setIsLoading(true);
+    setErrorMessage(null);
+    setProgressSteps(INITIAL_PROGRESS_STEPS);
+
+    updateProgress('1', 'in-progress');
+
+    try {
+      setTimeout(() => updateProgress('1', 'completed', '✓ Carousel post found with full media tree'), 400);
+      setTimeout(() => updateProgress('2', 'in-progress'), 500);
+
+      const res = await fetch('/api/fetch-carousel', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok || !data.success) {
+        throw new Error(
+          data.error ||
+            "We couldn't process this Instagram post. Please make sure the post is publicly accessible and try again."
+        );
+      }
+
+      updateProgress('2', 'completed', `✓ ${data.slideCount} carousel images downloaded`);
+      updateProgress('3', 'completed', `✓ ${data.slideCount}/${data.slideCount} images converted to lossless PNG`);
+      updateProgress('4', 'completed', '✓ Complete');
+
+      setSlides(data.slides);
+      saveCarouselToHistory(data.slides, url);
+    } catch (err: any) {
+      console.error('Fetch error:', err);
+      setErrorMessage(
+        err.message ||
+          "We couldn't process this Instagram post. Please make sure the post is publicly accessible and try again."
+      );
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleLoadSample = async () => {
+    setIsLoading(true);
+    setErrorMessage(null);
+    setProgressSteps(INITIAL_PROGRESS_STEPS);
+
+    updateProgress('1', 'completed', '✓ Sample post loaded');
+    updateProgress('2', 'in-progress');
+
+    try {
+      const res = await fetch('/api/fetch-carousel', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ isSample: true }),
+      });
+
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || 'Failed to generate sample carousel.');
+      }
+
+      updateProgress('2', 'completed', `✓ ${data.slideCount} images downloaded`);
+      updateProgress('3', 'completed', `✓ ${data.slideCount}/${data.slideCount} images converted to PNG`);
+      updateProgress('4', 'completed', '✓ Complete');
+
+      setSlides(data.slides);
+      saveCarouselToHistory(data.slides, undefined, '5 AI Tools for Product Designers (Sample)');
+    } catch (err: any) {
+      setErrorMessage(err.message || 'Failed to load sample.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleUploadFiles = async (fileList: FileList) => {
+    setIsLoading(true);
+    setErrorMessage(null);
+    setProgressSteps(INITIAL_PROGRESS_STEPS);
+
+    updateProgress('1', 'completed', `✓ ${fileList.length} files selected`);
+    updateProgress('2', 'in-progress');
+
+    try {
+      const formData = new FormData();
+      for (let i = 0; i < fileList.length; i++) {
+        formData.append('files', fileList[i]);
+      }
+
+      const res = await fetch('/api/upload-images', {
+        method: 'POST',
+        body: formData,
+      });
+
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || 'Failed to process uploaded files.');
+      }
+
+      updateProgress('2', 'completed', `✓ ${data.slideCount} images downloaded`);
+      updateProgress('3', 'completed', `✓ ${data.slideCount}/${data.slideCount} converted to PNG`);
+      updateProgress('4', 'completed', '✓ Complete');
+
+      setSlides(data.slides);
+      saveCarouselToHistory(data.slides, undefined, `Uploaded Carousel (${data.slideCount} Files)`);
+    } catch (err: any) {
+      setErrorMessage(err.message || 'Failed to upload and process files.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleApplyTransformations = async () => {
+    if (slides.length === 0 || isApplyingTransformations) return;
+
+    setIsApplyingTransformations(true);
+    try {
+      const res = await fetch('/api/process-slide', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          slides,
+          options: linkedinOptions,
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || 'Failed to apply LinkedIn formatting.');
+      }
+
+      setSlides(data.slides);
+    } catch (err: any) {
+      alert(err.message || 'Failed to apply LinkedIn transformations.');
+    } finally {
+      setIsApplyingTransformations(false);
+    }
+  };
+
+  const handleDownloadSingle = (slide: CarouselSlide, index: number) => {
+    const pageNumber = index + 1;
+    const filename = `carousel-${String(pageNumber).padStart(2, '0')}.png`;
+
+    const byteString = atob(slide.dataUrl.split(',')[1]);
+    const mimeString = slide.dataUrl.split(',')[0].split(':')[1].split(';')[0];
+    const ab = new ArrayBuffer(byteString.length);
+    const ia = new Uint8Array(ab);
+    for (let i = 0; i < byteString.length; i++) {
+      ia[i] = byteString.charCodeAt(i);
+    }
+    const blob = new Blob([ab], { type: mimeString });
+    saveAs(blob, filename);
+  };
+
+  const handleRemoveSlide = (id: string) => {
+    const updated = slides
+      .filter((s) => s.id !== id)
+      .map((s, idx) => ({
+        ...s,
+        currentIndex: idx,
+        filename: `carousel-${String(idx + 1).padStart(2, '0')}.png`,
+      }));
+    setSlides(updated);
+  };
+
+  const handleUpdateSlide = (updatedSlide: CarouselSlide) => {
+    setSlides((prev) =>
+      prev.map((s) => (s.id === updatedSlide.id ? updatedSlide : s))
+    );
+  };
+
+  const handleInsertCtaSlide = (newSlide: CarouselSlide, position: 'start' | 'end') => {
+    const nextSlides = position === 'start' ? [newSlide, ...slides] : [...slides, newSlide];
+    const reIndexed = nextSlides.map((s, idx) => ({
+      ...s,
+      currentIndex: idx,
+      filename: `carousel-${String(idx + 1).padStart(2, '0')}.png`,
+    }));
+    setSlides(reIndexed);
+  };
+
+  const handleApplyCoverSlide = (coverSlide: CarouselSlide, mode: 'replace-first' | 'prepend') => {
+    let nextSlides: CarouselSlide[];
+    if (mode === 'replace-first' && slides.length > 0) {
+      nextSlides = [coverSlide, ...slides.slice(1)];
+    } else {
+      nextSlides = [coverSlide, ...slides];
+    }
+    const reIndexed = nextSlides.map((s, idx) => ({
+      ...s,
+      currentIndex: idx,
+      filename: `carousel-${String(idx + 1).padStart(2, '0')}.png`,
+    }));
+    setSlides(reIndexed);
+  };
+
+  const handleApplyWatermark = (watermarkedSlides: CarouselSlide[]) => {
+    setSlides(watermarkedSlides);
+  };
+
+  const handleRemoveWatermark = () => {
+    const reverted = removeWatermarkFromAllSlides(slides);
+    setSlides(reverted);
+  };
+
+  const handleRestoreFromHistory = (restoredSlides: CarouselSlide[]) => {
+    setSlides(restoredSlides);
+    setErrorMessage(null);
+  };
+
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert h-5 w-[100px]"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the{" "}
-            <code className="rounded bg-black/[.06] px-1.5 py-0.5 font-mono text-[0.9em] dark:bg-white/[.08]">
-              page.tsx
-            </code>{" "}
-            file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
-        </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert h-[14px] w-4"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={14}
+    <div className="min-h-screen flex flex-col bg-[var(--bg-page)] text-[var(--text-main)] selection:bg-[#FDE047] selection:text-[#1D1815] relative overflow-x-hidden transition-colors">
+      {/* Top Navbar */}
+      <Navbar
+        onReset={resetState}
+        theme={theme}
+        onToggleTheme={handleToggleTheme}
+        onOpenHistory={() => setIsHistoryDrawerOpen(true)}
+      />
+
+      {/* Main Container */}
+      <main className="flex-1 max-w-6xl w-full mx-auto px-4 sm:px-6 py-10 sm:py-16 relative z-10">
+        {slides.length === 0 ? (
+          /* Step 1: Input URL / Drag Drop */
+          <UrlInputForm
+            onSubmitUrl={handleFetchUrl}
+            onLoadSample={handleLoadSample}
+            onUploadFiles={handleUploadFiles}
+            isLoading={isLoading}
+            progressSteps={progressSteps}
+            errorMessage={errorMessage}
+            onClearError={() => setErrorMessage(null)}
+          />
+        ) : (
+          /* Step 2: Preview, Reorder, Rotate/Flip, Cover Slide Generator, AI Captions, Watermarking, LinkedIn Controls & Download */
+          <div className="space-y-8 animate-fadeIn">
+            {/* LinkedIn Preset & Custom Dimension Controls */}
+            <LinkedInControls
+              options={linkedinOptions}
+              onOptionsChange={setLinkedinOptions}
+              onApplyTransformations={handleApplyTransformations}
+              isApplying={isApplyingTransformations}
             />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
+
+            {/* Reorderable Carousel Preview Grid with Rotate/Flip, Cover Generator, Watermark & AI Captions */}
+            <CarouselGrid
+              slides={slides}
+              onSlidesChange={setSlides}
+              onRemoveSlide={handleRemoveSlide}
+              onPreviewSlide={(slide) => setSelectedSlide(slide)}
+              onDownloadSingle={handleDownloadSingle}
+              onUpdateSlide={handleUpdateSlide}
+              onOpenCtaModal={() => setIsCtaModalOpen(true)}
+              onOpenCoverModal={() => setIsCoverModalOpen(true)}
+              onOpenCaptionModal={() => setIsCaptionModalOpen(true)}
+              onOpenWatermarkModal={() => setIsWatermarkModalOpen(true)}
+              onRemoveWatermark={handleRemoveWatermark}
+            />
+
+            {/* Download Bottom Deck (PDF + ZIP + AI Caption + Watermark) */}
+            <DownloadSection
+              slides={slides}
+              onReset={resetState}
+              onOpenCaptionModal={() => setIsCaptionModalOpen(true)}
+              onOpenWatermarkModal={() => setIsWatermarkModalOpen(true)}
+            />
+          </div>
+        )}
       </main>
+
+      {/* Modal for full screen inspection */}
+      <PreviewModal
+        slides={slides}
+        selectedSlide={selectedSlide}
+        onClose={() => setSelectedSlide(null)}
+        onSelectSlide={setSelectedSlide}
+        onDownloadSingle={handleDownloadSingle}
+      />
+
+      {/* Modal for Viral Pop Sticker Cover Slide Generator */}
+      <CoverSlideModal
+        isOpen={isCoverModalOpen}
+        onClose={() => setIsCoverModalOpen(false)}
+        onApplyCoverSlide={handleApplyCoverSlide}
+      />
+
+      {/* Modal for Custom Intro / Outro CTA Slide */}
+      <CtaSlideModal
+        isOpen={isCtaModalOpen}
+        onClose={() => setIsCtaModalOpen(false)}
+        onInsertSlide={handleInsertCtaSlide}
+      />
+
+      {/* Modal for Gemini AI LinkedIn Caption & Hashtags Generator */}
+      <CaptionModal
+        isOpen={isCaptionModalOpen}
+        onClose={() => setIsCaptionModalOpen(false)}
+        slides={slides}
+      />
+
+      {/* Modal for Slide Watermarking & Branding Stamp */}
+      <WatermarkModal
+        isOpen={isWatermarkModalOpen}
+        onClose={() => setIsWatermarkModalOpen(false)}
+        slides={slides}
+        onApplyWatermark={handleApplyWatermark}
+        onRemoveWatermark={handleRemoveWatermark}
+      />
+
+      {/* Drawer for Saved Carousel History */}
+      <HistoryDrawer
+        isOpen={isHistoryDrawerOpen}
+        onClose={() => setIsHistoryDrawerOpen(false)}
+        onRestoreCarousel={handleRestoreFromHistory}
+      />
+
+      {/* Footer */}
+      <Footer />
     </div>
   );
 }

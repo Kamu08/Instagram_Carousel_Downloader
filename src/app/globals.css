@@ -1,26 +1,171 @@
 @import "tailwindcss";
 
+@custom-variant dark (&:where(.dark, .dark *));
+
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --bg-page: #F7F4EB;
+  --text-main: #1D1815;
+  --text-muted: rgba(29, 24, 21, 0.75);
+  --bg-card: #FAF8F3;
+  --border-ink: #1D1815;
+  --shadow-ink: #1D1815;
+  --bg-header: rgba(247, 244, 235, 0.95);
+  --dot-grid: rgba(29, 24, 21, 0.12);
+  --input-bg: #FAF8F3;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+html.dark, .dark {
+  --bg-page: #161412;
+  --text-main: #F8F5EE;
+  --text-muted: rgba(248, 245, 238, 0.75);
+  --bg-card: #23201C;
+  --border-ink: #F8F5EE;
+  --shadow-ink: rgba(248, 245, 238, 0.85);
+  --bg-header: rgba(22, 20, 18, 0.95);
+  --dot-grid: rgba(248, 245, 238, 0.15);
+  --input-bg: #1C1916;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background-color: var(--bg-page);
+  color: var(--text-main);
+  font-family: var(--font-inter), system-ui, -apple-system, sans-serif;
+  min-height: 100vh;
+  overflow-x: hidden;
+  background-image: radial-gradient(var(--dot-grid) 1.5px, transparent 1.5px);
+  background-size: 24px 24px;
+  transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+/* Typography Helpers */
+.font-hand {
+  font-family: var(--font-caveat), 'Caveat', cursive, sans-serif;
+}
+
+.font-marker {
+  font-family: var(--font-patrick), 'Patrick Hand', cursive, sans-serif;
+}
+
+.font-display {
+  font-family: var(--font-space), 'Space Grotesk', system-ui, sans-serif;
+}
+
+.font-mono {
+  font-family: var(--font-mono), 'JetBrains Mono', monospace;
+}
+
+/* Sketchbook Card Styles */
+.sketch-card {
+  background-color: var(--bg-card);
+  border: 2px solid var(--border-ink);
+  border-radius: 24px;
+  box-shadow: 4px 4px 0px var(--shadow-ink);
+  transition: all 0.2s ease;
+}
+
+.sketch-card-hover:hover {
+  transform: translate(-2px, -2px);
+  box-shadow: 6px 6px 0px var(--shadow-ink);
+}
+
+/* Tactile Sketch Buttons */
+.sketch-btn {
+  border: 2px solid var(--border-ink);
+  border-radius: 16px;
+  box-shadow: 3px 3px 0px var(--shadow-ink);
+  transition: all 0.15s cubic-bezier(0.16, 1, 0.3, 1);
+  cursor: pointer;
+  user-select: none;
+}
+
+.sketch-btn:hover {
+  transform: translate(-1px, -1px);
+  box-shadow: 4px 4px 0px var(--shadow-ink);
+}
+
+.sketch-btn:active {
+  transform: translate(2px, 2px);
+  box-shadow: 1px 1px 0px var(--shadow-ink);
+}
+
+/* Highlighter Text Marker Effects */
+.marker-yellow {
+  background: linear-gradient(180deg, transparent 50%, rgba(253, 224, 71, 0.9) 50%);
+  display: inline;
+  padding: 0 4px;
+  border-radius: 4px;
+}
+
+.dark .marker-yellow {
+  background: linear-gradient(180deg, transparent 50%, rgba(253, 224, 71, 0.4) 50%);
+}
+
+.marker-pink {
+  background: linear-gradient(180deg, transparent 50%, rgba(245, 163, 179, 0.9) 50%);
+  display: inline;
+  padding: 0 4px;
+  border-radius: 4px;
+}
+
+.dark .marker-pink {
+  background: linear-gradient(180deg, transparent 50%, rgba(245, 163, 179, 0.4) 50%);
+}
+
+.marker-blue {
+  background: linear-gradient(180deg, transparent 50%, rgba(147, 197, 253, 0.9) 50%);
+  display: inline;
+  padding: 0 4px;
+  border-radius: 4px;
+}
+
+.marker-mint {
+  background: linear-gradient(180deg, transparent 50%, rgba(167, 243, 208, 0.9) 50%);
+  display: inline;
+  padding: 0 4px;
+  border-radius: 4px;
+}
+
+/* Paper Tape Sticker Decorator */
+.tape-top {
+  position: absolute;
+  top: -12px;
+  left: 50%;
+  transform: translateX(-50%) rotate(-1.5deg);
+  height: 24px;
+  width: 96px;
+  background: rgba(253, 224, 71, 0.85);
+  border: 1.5px dashed rgba(29, 24, 21, 0.45);
+  border-radius: 2px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.06);
+  z-index: 10;
+  pointer-events: none;
+}
+
+.tape-pink {
+  background: rgba(245, 163, 179, 0.9);
+}
+
+.tape-blue {
+  background: rgba(147, 197, 253, 0.9);
+}
+
+/* Transparent Canvas Grid Pattern for PNG Preview */
+.canvas-checkerboard {
+  background-color: #F2EFE9;
+  background-image: 
+    linear-gradient(45deg, rgba(29, 24, 21, 0.04) 25%, transparent 25%),
+    linear-gradient(-45deg, rgba(29, 24, 21, 0.04) 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, rgba(29, 24, 21, 0.04) 75%),
+    linear-gradient(-45deg, transparent 75%, rgba(29, 24, 21, 0.04) 75%);
+  background-size: 16px 16px;
+  background-position: 0 0, 0 8px, 8px -8px, -8px 0px;
+}
+
+.dark .canvas-checkerboard {
+  background-color: #1C1916;
+  background-image: 
+    linear-gradient(45deg, rgba(255, 255, 255, 0.04) 25%, transparent 25%),
+    linear-gradient(-45deg, rgba(255, 255, 255, 0.04) 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, rgba(255, 255, 255, 0.04) 75%),
+    linear-gradient(-45deg, transparent 75%, rgba(255, 255, 255, 0.04) 75%);
 }

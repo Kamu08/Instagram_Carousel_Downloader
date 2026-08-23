@@ -171,7 +171,7 @@ export function CarouselGrid({
         </div>
       </div>
 
-      {/* Sortable Grid with DragOverlay */}
+      {/* Sortable Grid with Wider 3-Column Layout */}
       <DndContext
         sensors={sensors}
         collisionDetection={closestCenter}
@@ -180,7 +180,7 @@ export function CarouselGrid({
         onDragCancel={handleDragCancel}
       >
         <SortableContext items={slides.map((s) => s.id)} strategy={rectSortingStrategy}>
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6 sm:gap-7">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-7 sm:gap-8">
             {slides.map((slide, index) => (
               <SortableSlide
                 key={slide.id}

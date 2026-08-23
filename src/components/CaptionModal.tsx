@@ -11,6 +11,7 @@ import {
   AlertCircle,
   Scan,
   FileText,
+  Sliders,
 } from 'lucide-react';
 import { CarouselSlide } from '@/lib/types';
 
@@ -64,7 +65,7 @@ export function CaptionModal({
     setErrorMessage(null);
 
     try {
-      // Send all slide images for visual multimodal scanning
+      // Send slide images for vision scan
       const res = await fetch('/api/generate-caption', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -132,22 +133,22 @@ export function CaptionModal({
         <div className="px-6 py-4 bg-[var(--bg-page)] border-b-2 border-[var(--border-ink)] flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl bg-[#FDE047] border-2 border-[#1D1815] shadow-[2px_2px_0px_#1D1815] flex items-center justify-center text-[#1D1815]">
-              <Scan className="w-5 h-5 stroke-[2.5]" />
+              <Sparkles className="w-5 h-5 stroke-[2.5]" />
             </div>
             <div>
               <div className="flex items-center gap-2">
                 <h3 className="font-display font-black text-lg text-[var(--text-main)]">
-                  Multimodal AI Caption Studio
+                  Kamal Sharma AI Caption Studio
                 </h3>
                 <span className="font-marker text-xs px-2.5 py-0.5 rounded-full bg-[#A7F3D0] text-[#1D1815] border border-[#1D1815]">
-                  Vision Scans All {slides.length} Slides ✨
+                  Vision Scanned ✨
                 </span>
-                <span className="font-marker text-xs px-2 py-0.5 rounded-full bg-[#F5A3B3] text-[#1D1815] border border-[#1D1815]">
-                  500+ Words Deep-Dive
+                <span className="font-marker text-xs px-2 py-0.5 rounded-full bg-[#FDE047] text-[#1D1815] border border-[#1D1815]">
+                  Punchy &amp; High-Impact
                 </span>
               </div>
               <p className="font-hand text-base text-[var(--text-muted)] font-bold -mt-1">
-                Gemini 3.6 Flash visually reads every slide image to write a comprehensive masterclass post
+                Optimized, skimmable LinkedIn post with native mathematical Unicode bolding
               </p>
             </div>
           </div>
@@ -208,15 +209,15 @@ export function CaptionModal({
         {/* Content Body */}
         <div className="flex-1 grid grid-cols-1 lg:grid-cols-12 overflow-hidden">
           {/* Form Settings */}
-          <div className="lg:col-span-5 p-5 sm:p-6 overflow-y-auto space-y-4 border-b lg:border-b-0 lg:border-r-2 border-[var(--border-ink)]/20">
+          <div className="lg:col-span-5 p-5 sm:p-6 overflow-y-auto custom-scrollbar space-y-4 border-b lg:border-b-0 lg:border-r-2 border-[var(--border-ink)]/20">
             {/* Visual Scan Badge */}
-            <div className="p-3 rounded-2xl bg-[#A7F3D0]/40 border-2 border-[#1D1815] text-xs font-display">
+            <div className="p-3.5 rounded-2xl bg-[#A7F3D0]/35 border-2 border-[#1D1815] text-xs font-display">
               <div className="flex items-center gap-2 font-black text-[#1D1815]">
                 <Scan className="w-4 h-4 text-[#059669]" />
                 <span>Multimodal Vision Active</span>
               </div>
               <p className="font-hand text-sm font-bold text-[#1D1815]/80 mt-1">
-                Gemini will scan diagrams, code &amp; text from all {slides.length} slides to craft a 500+ word post.
+                Scans all {slides.length} slides to extract key concepts, tools &amp; architectures.
               </p>
             </div>
 
@@ -228,7 +229,7 @@ export function CaptionModal({
                 type="text"
                 value={topic}
                 onChange={(e) => setTopic(e.target.value)}
-                placeholder="e.g. 25 System Design Patterns for Senior Engineers"
+                placeholder="e.g. 25 System Design Patterns"
                 className="w-full px-3.5 py-2.5 rounded-xl border-2 border-[var(--border-ink)] bg-[var(--input-bg)] font-display font-bold text-sm text-[var(--text-main)] focus:outline-none"
               />
             </div>
@@ -267,7 +268,7 @@ export function CaptionModal({
                 rows={2}
                 value={customContext}
                 onChange={(e) => setCustomContext(e.target.value)}
-                placeholder="e.g. Highlight caching strategies and Redis vs Memcached..."
+                placeholder="e.g. Highlight Sliding Window & Two Pointers..."
                 className="w-full px-3.5 py-2 rounded-xl border-2 border-[var(--border-ink)] bg-[var(--input-bg)] font-display text-xs text-[var(--text-main)] focus:outline-none resize-none"
               />
             </div>
@@ -281,18 +282,18 @@ export function CaptionModal({
               {isLoading ? (
                 <>
                   <Loader2 className="w-4 h-4 animate-spin stroke-[3]" />
-                  <span>Scanning Slides &amp; Writing 500+ Words...</span>
+                  <span>Scanning Slides &amp; Writing Post...</span>
                 </>
               ) : (
                 <>
                   <Sparkles className="w-4 h-4 stroke-[2.5]" />
-                  <span>⚡ Scan All Slides &amp; Generate Post</span>
+                  <span>⚡ Generate Optimized Post</span>
                 </>
               )}
             </button>
           </div>
 
-          {/* Generated Preview Column */}
+          {/* Generated Preview Column with Sleek Custom Scrollbar */}
           <div className="lg:col-span-7 p-5 sm:p-6 bg-[var(--bg-page)] flex flex-col justify-between overflow-hidden">
             <div className="flex items-center justify-between mb-3">
               <span className="font-display font-black text-xs uppercase tracking-wider text-[var(--text-muted)]">
@@ -301,14 +302,8 @@ export function CaptionModal({
 
               {generatedCaption && (
                 <div className="flex items-center gap-2 text-xs font-mono">
-                  <span
-                    className={`px-2 py-0.5 rounded-full border font-bold ${
-                      wordCount >= 500
-                        ? 'bg-[#A7F3D0] text-[#1D1815] border-[#1D1815]'
-                        : 'bg-[#FDE047] text-[#1D1815] border-[#1D1815]'
-                    }`}
-                  >
-                    ✓ {wordCount} Words {wordCount >= 500 ? '(Target Met)' : ''}
+                  <span className="px-2.5 py-0.5 rounded-full border border-[#1D1815] bg-[#FDE047] text-[#1D1815] font-black">
+                    {wordCount} Words
                   </span>
                   <span className="text-[var(--text-muted)]">•</span>
                   <span className="text-[var(--text-muted)]">{charCount} chars</span>
@@ -316,17 +311,18 @@ export function CaptionModal({
               )}
             </div>
 
-            <div className="flex-1 min-h-[340px] max-h-[55vh] p-4 rounded-2xl border-2 border-[var(--border-ink)] bg-[var(--bg-card)] shadow-[3px_3px_0px_var(--shadow-ink)] overflow-y-auto font-sans text-sm leading-relaxed text-[var(--text-main)] whitespace-pre-wrap selection:bg-[#FDE047]">
+            {/* Optimized Content Box with Custom Sleek Scrollbar */}
+            <div className="flex-1 min-h-[340px] max-h-[55vh] p-5 rounded-2xl border-2 border-[var(--border-ink)] bg-[var(--bg-card)] shadow-[3px_3px_0px_var(--shadow-ink)] overflow-y-auto custom-scrollbar font-sans text-sm leading-relaxed text-[var(--text-main)] whitespace-pre-wrap selection:bg-[#FDE047]">
               {generatedCaption ? (
                 generatedCaption
               ) : (
                 <div className="h-full flex flex-col items-center justify-center text-center p-6 text-[var(--text-muted)] space-y-2">
-                  <Scan className="w-10 h-10 opacity-40 animate-pulse text-[#A7F3D0]" />
+                  <Sparkles className="w-10 h-10 opacity-40 animate-pulse text-[#FDE047]" />
                   <p className="font-display font-bold text-sm">
-                    Click &ldquo;Scan All Slides &amp; Generate Post&rdquo;
+                    Click &ldquo;Generate Optimized Post&rdquo;
                   </p>
                   <p className="font-hand text-base font-bold opacity-80">
-                    Gemini Vision will scan diagrams and text from all {slides.length} slides to write a 500+ word masterclass
+                    Creates a punchy, skimmable post with Unicode bolding and bullet takeaways
                   </p>
                 </div>
               )}

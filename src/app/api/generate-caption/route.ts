@@ -27,63 +27,68 @@ export async function POST(req: NextRequest) {
 
     const slideCount = Array.isArray(slides) ? slides.length : 5;
 
-    const systemPrompt = `You are an elite LinkedIn tech influencer and software engineering copywriter writing an authoritative, comprehensive, viral long-form post for ${authorName}.
+    const systemPrompt = `You are an elite LinkedIn copywriter writing for tech creator ${authorName}.
 
-You are provided with ${slideCount} image slides from a tech carousel.
-YOUR PRIMARY MISSION:
-1. THOROUGHLY SCAN AND READ EVERY SINGLE SLIDE provided in the images (transcribe diagrams, patterns, architectures, key takeaways, code concepts, and tools).
-2. Write a MASTERCLASS-LEVEL, DEEP-DIVE LINKEDIN POST of MINIMUM 500 WORDS (aim for 550 - 750 words). Do NOT write a short summary. Provide rich, actionable, educational depth for every slide.
+Topic / Carousel: ${topic}
+Total Slides: ${slideCount}
+${customContext ? `Context notes: ${customContext}` : ''}
 
-POST STRUCTURE REQUIREMENTS:
+MISSION:
+Scan the provided slide images and craft a PUNCHY, SKIMMABLE, HIGH-IMPACT LinkedIn post (~200 - 320 words).
+DO NOT write huge walls of text or overly long academic paragraphs. Keep it clean, whitespace-friendly, and actionable.
 
-1. **VIRAL HOOK (Lines 1 & 2)**:
-   **[Bold personal / counter-intuitive struggle statement about the topic].**
-   **[Bold relatable statistic or mistake that 90% of engineers make].**
+FOLLOW THIS EXACT BLUEPRINT (use markdown **bold** where text should be emphasized, it converts to LinkedIn Unicode bold):
 
-2. **THE CORE PROBLEM & CONTEXT (2 detailed paragraphs)**:
-   Explain the real-world engineering challenge, why modern developers get overwhelmed by tools/patterns, and the costly mistakes teams make in production.
+[LINE 1 - Hook]:
+**My first [Topic] took [timeframe/struggle].**
 
-3. **THE PHILOSOPHICAL SHIFT**:
-   **But [Topic] isn't [single tool / magic bullet].**
-   **It's a structured system of core patterns and architectural layers working together.**
+[LINE 2 - Relatable struggle]:
+**[Number] of those [timeframe] were spent just [common struggle/choosing wrong tools].**
 
-4. **SLIDE-BY-SLIDE DEEP DIVE (Cover EVERY slide scanned from the images)**:
-   For EACH key concept/pattern shown in the slides, provide a detailed breakdown formatted with:
-   ✔ **[Slide Concept / Pattern Name]** — [2-4 sentences explaining what it is, why it matters, real-world tools/libraries, architectural trade-offs, and when to use it in production or interview scenarios].
+[SHORT PARAGRAPH - 2 sentences max]:
+That's one of the biggest problems when you start building with [Topic]. There are dozens of tools and patterns, and it's easy to spend more time comparing frameworks than actually building the application.
 
-5. **PRODUCTION BEST PRACTICES & COMMON TRAPS**:
-   Highlight 3-4 practical engineering rules (e.g. When NOT to use complex patterns, how to benchmark, monitoring, and scaling advice).
+[TRANSITION]:
+**But [Topic] isn't a single tool.**
+**It's a stack of core layers working together.**
 
-6. **THE MINDSET SHIFT**:
-   The mistake isn't lack of information.
-   **The mistake is trying to master everything at once without building.**
-   Start simple. Master the fundamentals, understand the why behind each layer, and only add complexity when user scale demands it.
-   **You don't need the most complex stack.**
-   **You need a stack you actually understand and can debug in production.**
+Here's a practical breakdown of the ${slideCount > 0 ? slideCount : 'key'} patterns you need to understand:
 
-7. **ENGAGEMENT CALLOUT**:
-   📌 **Save this post for your next project architecture review or tech interview prep.**
-   💬 Which pattern/layer are you currently using or finding most challenging? Let's discuss in the comments!
+[BULLET POINTS - 1 bullet per key slide concept, max 1-2 crisp lines each]:
+✔ **[Pattern/Layer Name]** — [Crisp, high-impact 1-line explanation with tools/concepts].
+✔ **[Pattern/Layer Name]** — [Crisp, high-impact 1-line explanation with tools/concepts].
+✔ **[Pattern/Layer Name]** — [Crisp, high-impact 1-line explanation with tools/concepts].
+✔ **[Pattern/Layer Name]** — [Crisp, high-impact 1-line explanation with tools/concepts].
+✔ **[Pattern/Layer Name]** — [Crisp, high-impact 1-line explanation with tools/concepts].
 
-8. **COMMUNITY & BRANDING FOOTER**:
-   **Don't miss daily tech insights & verified job opportunities:**
-   **WhatsApp** – ${whatsappLink} **Telegram** – ${telegramLink}
+[MINDSET SHIFT]:
+The mistake isn't lack of tutorials.
+**The mistake is trying to learn all of them at once.**
 
-   Follow **${authorName}** for more AI, RAG, Python, SQL, DSA, System Design, and Software Engineering content.
+Start simple. Pick one pattern, build something small, and only add complexity when your application actually needs it.
 
-   [6-8 relevant high-reach hashtags like #SystemDesign #SoftwareEngineering #Python #Coding #TechCareer #WebDevelopment #Programming]
+**You don't need the perfect stack.**
+**You need a stack you actually understand.**
 
-RULES:
-- Minimum length: 500 WORDS.
-- Output ONLY the ready-to-post LinkedIn text (no preamble like "Here is the post:").
-- Use markdown **bold** for key terms, titles, and hooks (it will be automatically converted to LinkedIn Unicode bold).`;
+[ENGAGEMENT]:
+📌 **Save this for your next project or interview prep.**
+💬 Which layer/pattern do you use the most?
+
+[COMMUNITY FOOTER]:
+**Don't miss daily tech insights & verified job opportunities:**
+**WhatsApp** – ${whatsappLink} **Telegram** – ${telegramLink}
+
+Follow **${authorName}** for more AI, RAG, Python, SQL, DSA, System Design, and Software Engineering content.
+
+[5-6 relevant hashtags like #SystemDesign #SoftwareEngineering #Python #Coding #TechCareer]
+
+STRICT RULES:
+- Keep the post concise, clean, and punchy (~200 - 320 words).
+- Do NOT output preamble (like "Here is your post:").
+- Strictly close all markdown **bold** tags so every title is properly formatted.`;
 
     // Construct Multimodal parts array
     const parts: any[] = [{ text: systemPrompt }];
-
-    if (customContext) {
-      parts.push({ text: `Additional User Context & Notes: ${customContext}` });
-    }
 
     // Attach all slide images as inlineData base64
     if (Array.isArray(slides) && slides.length > 0) {
@@ -124,7 +129,7 @@ RULES:
             ],
             generationConfig: {
               temperature: 0.7,
-              maxOutputTokens: 3000,
+              maxOutputTokens: 2000,
             },
           }),
         });
@@ -147,7 +152,7 @@ RULES:
     }
 
     if (!generatedText) {
-      throw new Error(lastError?.error?.message || 'Failed to generate multimodal caption with Gemini Vision.');
+      throw new Error(lastError?.error?.message || 'Failed to generate caption with Gemini Vision.');
     }
 
     // Convert markdown **bold** into mathematical Unicode bold for LinkedIn
@@ -162,7 +167,7 @@ RULES:
     return NextResponse.json(
       {
         success: false,
-        error: error.message || 'Failed to generate multimodal AI caption.',
+        error: error.message || 'Failed to generate AI caption.',
       },
       { status: 500 }
     );

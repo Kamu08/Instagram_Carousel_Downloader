@@ -3,8 +3,8 @@
 import React, { useState, useEffect } from 'react';
 import { Navbar } from '@/components/Navbar';
 import { UrlInputForm } from '@/components/UrlInputForm';
+import { StudioCommandDeck } from '@/components/StudioCommandDeck';
 import { CarouselGrid } from '@/components/CarouselGrid';
-import { LinkedInControls } from '@/components/LinkedInControls';
 import { DownloadSection } from '@/components/DownloadSection';
 import { PreviewModal } from '@/components/PreviewModal';
 import { CtaSlideModal } from '@/components/CtaSlideModal';
@@ -321,7 +321,7 @@ export default function Home() {
       />
 
       {/* Main Container */}
-      <main className="flex-1 max-w-6xl w-full mx-auto px-4 sm:px-6 py-10 sm:py-16 relative z-10">
+      <main className="flex-1 max-w-6xl w-full mx-auto px-4 sm:px-6 py-8 sm:py-12 relative z-10">
         {slides.length === 0 ? (
           /* Step 1: Input URL / Drag Drop */
           <UrlInputForm
@@ -334,17 +334,27 @@ export default function Home() {
             onClearError={() => setErrorMessage(null)}
           />
         ) : (
-          /* Step 2: Preview, Reorder, Rotate/Flip, Cover Slide Generator, AI Captions, Watermarking, LinkedIn Controls & Download */
-          <div className="space-y-8 animate-fadeIn">
-            {/* LinkedIn Preset & Custom Dimension Controls */}
-            <LinkedInControls
-              options={linkedinOptions}
-              onOptionsChange={setLinkedinOptions}
+          /* Step 2: Unified Command Deck, Grid, Tools & Export */
+          <div className="space-y-6 animate-fadeIn">
+            {/* Unified Pro Command Deck (Idea 1) */}
+            <StudioCommandDeck
+              slides={slides}
+              linkedinOptions={linkedinOptions}
+              onLinkedinOptionsChange={setLinkedinOptions}
               onApplyTransformations={handleApplyTransformations}
-              isApplying={isApplyingTransformations}
+              isApplyingTransformations={isApplyingTransformations}
+              skipFirstSlide={skipFirstSlide}
+              setSkipFirstSlide={setSkipFirstSlide}
+              skipLastSlide={skipLastSlide}
+              setSkipLastSlide={setSkipLastSlide}
+              onOpenWatermarkModal={() => setIsWatermarkModalOpen(true)}
+              onRemoveWatermark={handleRemoveWatermark}
+              onOpenCoverModal={() => setIsCoverModalOpen(true)}
+              onOpenCtaModal={() => setIsCtaModalOpen(true)}
+              onOpenCaptionModal={() => setIsCaptionModalOpen(true)}
             />
 
-            {/* Reorderable Carousel Preview Grid with Rotate/Flip, Cover Generator, Watermark, AI Captions & Skip Filters */}
+            {/* Reorderable Carousel Preview Grid */}
             <CarouselGrid
               slides={slides}
               onSlidesChange={setSlides}
@@ -356,11 +366,6 @@ export default function Home() {
               onOpenCoverModal={() => setIsCoverModalOpen(true)}
               onOpenCaptionModal={() => setIsCaptionModalOpen(true)}
               onOpenWatermarkModal={() => setIsWatermarkModalOpen(true)}
-              onRemoveWatermark={handleRemoveWatermark}
-              skipFirstSlide={skipFirstSlide}
-              setSkipFirstSlide={setSkipFirstSlide}
-              skipLastSlide={skipLastSlide}
-              setSkipLastSlide={setSkipLastSlide}
             />
 
             {/* Download Bottom Deck (PDF + ZIP + AI Caption + Watermark + Skip Filters) */}

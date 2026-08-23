@@ -28,9 +28,6 @@ import {
   Wand2,
   Sparkles,
   Stamp,
-  Trash2,
-  SlidersHorizontal,
-  CheckCircle2,
 } from 'lucide-react';
 
 interface CarouselGridProps {
@@ -44,11 +41,6 @@ interface CarouselGridProps {
   onOpenCoverModal: () => void;
   onOpenCaptionModal: () => void;
   onOpenWatermarkModal: () => void;
-  onRemoveWatermark: () => void;
-  skipFirstSlide: boolean;
-  setSkipFirstSlide: (val: boolean) => void;
-  skipLastSlide: boolean;
-  setSkipLastSlide: (val: boolean) => void;
 }
 
 export function CarouselGrid({
@@ -62,21 +54,8 @@ export function CarouselGrid({
   onOpenCoverModal,
   onOpenCaptionModal,
   onOpenWatermarkModal,
-  onRemoveWatermark,
-  skipFirstSlide,
-  setSkipFirstSlide,
-  skipLastSlide,
-  setSkipLastSlide,
 }: CarouselGridProps) {
   const [activeId, setActiveId] = useState<string | null>(null);
-
-  const isWatermarked = slides.some((s) => s.isWatermarked);
-
-  const exportCount = slides.filter((_, idx) => {
-    if (idx === 0 && skipFirstSlide) return false;
-    if (idx === slides.length - 1 && skipLastSlide) return false;
-    return true;
-  }).length;
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -123,138 +102,7 @@ export function CarouselGrid({
 
   return (
     <div className="w-full space-y-6">
-      {/* 1. Skip First / Last Slide Export Controls Quick-Bar */}
-      {slides.length > 1 && (
-        <div className="p-4 sm:p-5 rounded-3xl bg-[var(--bg-card)] border-2 border-[var(--border-ink)] shadow-[4px_4px_0px_var(--shadow-ink)] flex flex-col md:flex-row items-center justify-between gap-4">
-          <div className="flex items-center gap-3 text-center md:text-left">
-            <div className="w-10 h-10 rounded-2xl bg-[#93C5FD] border-2 border-[#1D1815] shadow-[2px_2px_0px_#1D1815] flex items-center justify-center text-[#1D1815] shrink-0">
-              <SlidersHorizontal className="w-5 h-5 stroke-[2.5]" />
-            </div>
-            <div>
-              <div className="flex flex-wrap items-center justify-center md:justify-start gap-2">
-                <h3 className="font-display font-black text-sm sm:text-base text-[var(--text-main)]">
-                  Export Filters &amp; Slide Selection
-                </h3>
-                <span className="font-marker text-xs px-2.5 py-0.5 rounded-full bg-[#FDE047] text-[#1D1815] border border-[#1D1815]">
-                  Exporting {exportCount} of {slides.length} slides
-                </span>
-              </div>
-              <p className="font-hand text-xs sm:text-sm text-[var(--text-muted)] font-bold">
-                Toggle to exclude Cover or Outro slide from your LinkedIn PDF and ZIP downloads
-              </p>
-            </div>
-          </div>
-
-          <div className="flex flex-wrap items-center justify-center gap-3">
-            {/* Skip Slide 1 Toggle */}
-            <label
-              className={`px-3.5 py-2 rounded-xl border-2 border-[var(--border-ink)] flex items-center gap-2 cursor-pointer transition-all select-none ${
-                skipFirstSlide
-                  ? 'bg-[#F43F5E] text-white shadow-[2px_2px_0px_var(--shadow-ink)]'
-                  : 'bg-[var(--bg-page)] text-[var(--text-main)] hover:bg-[var(--bg-card)]'
-              }`}
-            >
-              <input
-                type="checkbox"
-                checked={skipFirstSlide}
-                onChange={(e) => setSkipFirstSlide(e.target.checked)}
-                className="w-4 h-4 accent-[#1D1815] cursor-pointer"
-              />
-              <span className="font-display font-black text-xs">
-                {skipFirstSlide ? '🚫 Skipping Slide 1 (Cover)' : '✓ Include Slide 1 (Cover)'}
-              </span>
-            </label>
-
-            {/* Skip Last Slide Toggle */}
-            <label
-              className={`px-3.5 py-2 rounded-xl border-2 border-[var(--border-ink)] flex items-center gap-2 cursor-pointer transition-all select-none ${
-                skipLastSlide
-                  ? 'bg-[#F43F5E] text-white shadow-[2px_2px_0px_var(--shadow-ink)]'
-                  : 'bg-[var(--bg-page)] text-[var(--text-main)] hover:bg-[var(--bg-card)]'
-              }`}
-            >
-              <input
-                type="checkbox"
-                checked={skipLastSlide}
-                onChange={(e) => setSkipLastSlide(e.target.checked)}
-                className="w-4 h-4 accent-[#1D1815] cursor-pointer"
-              />
-              <span className="font-display font-black text-xs">
-                {skipLastSlide ? '🚫 Skipping Last Slide (Outro)' : '✓ Include Last Slide (Outro)'}
-              </span>
-            </label>
-          </div>
-        </div>
-      )}
-
-      {/* 2. Dedicated Watermark & Branding Quick-Action Banner */}
-      <div className="p-4 sm:p-5 rounded-3xl bg-[var(--bg-card)] border-2 border-[var(--border-ink)] shadow-[4px_4px_0px_var(--shadow-ink)] flex flex-col sm:flex-row items-center justify-between gap-4">
-        <div className="flex items-center gap-3.5 text-center sm:text-left">
-          <div
-            className={`w-12 h-12 rounded-2xl border-2 border-[#1D1815] shadow-[2px_2px_0px_#1D1815] flex items-center justify-center text-[#1D1815] shrink-0 ${
-              isWatermarked ? 'bg-[#A7F3D0]' : 'bg-[#FDE047]'
-            }`}
-          >
-            <Stamp className="w-6 h-6 stroke-[2.5]" />
-          </div>
-          <div>
-            <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2">
-              <h3 className="font-display font-black text-base sm:text-lg text-[var(--text-main)]">
-                {isWatermarked
-                  ? '✓ Watermark Active on Carousel'
-                  : 'Watermark: "Kamal Sharma" (6 Positions & 8 Styles)'}
-              </h3>
-              <span
-                className={`font-marker text-xs px-2.5 py-0.5 rounded-full text-[#1D1815] border border-[#1D1815] ${
-                  isWatermarked ? 'bg-[#A7F3D0]' : 'bg-[#FDE047]'
-                }`}
-              >
-                {isWatermarked ? 'Stamped ✨' : 'Customizable ✨'}
-              </span>
-            </div>
-            <p className="font-hand text-sm sm:text-base text-[var(--text-muted)] font-bold -mt-0.5">
-              {isWatermarked
-                ? 'Watermarks are stamped into all slides. You can edit settings or remove them anytime.'
-                : 'Apply watermark stamp to all slides with separate toggles for Cover (First) & Outro (Last)'}
-            </p>
-          </div>
-        </div>
-
-        <div className="flex items-center gap-2.5 w-full sm:w-auto justify-center sm:justify-end">
-          {isWatermarked ? (
-            <>
-              <button
-                type="button"
-                onClick={onRemoveWatermark}
-                className="px-4 py-3 rounded-2xl border-2 border-[#F43F5E] bg-[#F5A3B3]/40 hover:bg-[#F5A3B3] text-[#F43F5E] hover:text-[#1D1815] font-display font-black text-xs sm:text-sm flex items-center gap-1.5 cursor-pointer transition-all shadow-[2px_2px_0px_var(--shadow-ink)]"
-              >
-                <Trash2 className="w-4 h-4 stroke-[2.5]" />
-                <span>Remove Watermark</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={onOpenWatermarkModal}
-                className="px-5 py-3 rounded-2xl bg-[#FDE047] hover:bg-[#FACC15] sketch-btn text-[#1D1815] font-display font-black text-xs sm:text-sm flex items-center justify-center gap-2 cursor-pointer uppercase tracking-wider"
-              >
-                <Stamp className="w-4 h-4 stroke-[2.5]" />
-                <span>Edit Watermark</span>
-              </button>
-            </>
-          ) : (
-            <button
-              type="button"
-              onClick={onOpenWatermarkModal}
-              className="w-full sm:w-auto px-5 py-3 rounded-2xl bg-[#FDE047] hover:bg-[#FACC15] sketch-btn text-[#1D1815] font-display font-black text-xs sm:text-sm flex items-center justify-center gap-2 cursor-pointer uppercase tracking-wider"
-            >
-              <Stamp className="w-4 h-4 stroke-[2.5]" />
-              <span>Add Watermark &amp; Branding</span>
-            </button>
-          )}
-        </div>
-      </div>
-
-      {/* 3. Header bar above grid */}
+      {/* Clean Grid Toolbar */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b-2 border-dashed border-[var(--border-ink)]/20">
         <div className="flex items-center gap-3.5">
           <div className="w-12 h-12 rounded-2xl bg-[#93C5FD] border-2 border-[#1D1815] shadow-[3px_3px_0px_#1D1815] flex items-center justify-center text-[#1D1815] shrink-0">
@@ -276,6 +124,16 @@ export function CarouselGrid({
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
+          {/* Watermark Button */}
+          <button
+            type="button"
+            onClick={onOpenWatermarkModal}
+            className="px-3.5 py-2.5 rounded-xl bg-[#FAF8F3] dark:bg-[#1C1916] hover:bg-[#FDE047] dark:hover:text-[#1D1815] border-2 border-[var(--border-ink)] shadow-[2px_2px_0px_var(--shadow-ink)] hover:translate-x-[1px] hover:translate-y-[1px] font-display font-black text-xs text-[var(--text-main)] flex items-center gap-1.5 cursor-pointer transition-all active:translate-x-[2px] active:translate-y-[2px]"
+          >
+            <Stamp className="w-4 h-4 stroke-[2.5]" />
+            <span>Watermark</span>
+          </button>
+
           {/* AI Caption Generator Button */}
           <button
             type="button"
@@ -286,7 +144,7 @@ export function CarouselGrid({
             <span>AI Caption</span>
           </button>
 
-          {/* Generate Custom Cover Slide (Viral Sticker Style) */}
+          {/* Generate Custom Cover Slide */}
           <button
             type="button"
             onClick={onOpenCoverModal}

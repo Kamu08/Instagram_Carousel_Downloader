@@ -1,8 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { formatMarkdownToLinkedInBold } from '@/lib/unicode-bold';
 
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY || '';
-
 export async function POST(req: NextRequest) {
   try {
     const {
@@ -13,13 +11,16 @@ export async function POST(req: NextRequest) {
       authorName = 'Kamal Sharma',
       whatsappLink = 'https://tinyurl.com/mwmbwytv',
       telegramLink = 'https://tinyurl.com/6p9un6b5',
+      clientApiKey = '',
     } = await req.json();
 
-    if (!GEMINI_API_KEY) {
+    const activeApiKey = (clientApiKey && clientApiKey.trim()) || process.env.GEMINI_API_KEY || '';
+
+    if (!activeApiKey) {
       return NextResponse.json(
         {
           success: false,
-          error: 'Gemini API key is not configured. Please set GEMINI_API_KEY in your .env.local file.',
+          error: 'Gemini API key is required. Please provide an API key or set GEMINI_API_KEY in your environment.',
         },
         { status: 400 }
       );
@@ -72,13 +73,19 @@ STRICT RULES:
 - Do NOT output preamble like "Here is your post:".
 - Tailor the bullet points and explanations specifically to the topic: "${topic}".`;
 
-    const models = ['gemini-3.6-flash', 'gemini-2.5-flash', 'gemini-1.5-flash'];
+    const models = [
+      'gemini-3.6-flash',
+      'gemini-3.7-flash',
+      'gemini-3.5-flash',
+      'gemini-flash-latest',
+    ];
+
     let lastError: any = null;
     let generatedText = '';
 
     for (const model of models) {
       try {
-        const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${GEMINI_API_KEY}`;
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${activeApiKey}`;
         const response = await fetch(url, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },

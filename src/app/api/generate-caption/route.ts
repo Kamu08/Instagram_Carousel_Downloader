@@ -4,13 +4,12 @@ import { formatMarkdownToLinkedInBold } from '@/lib/unicode-bold';
 export async function POST(req: NextRequest) {
   try {
     const {
-      topic = '25 Patterns. Hundreds of Interview Questions.',
-      slideCount = 5,
-      tone = 'kamal-style',
-      customContext = '',
+      topic = 'Tech & Architecture Breakdown',
+      slides = [],
       authorName = 'Kamal Sharma',
       whatsappLink = 'https://tinyurl.com/mwmbwytv',
       telegramLink = 'https://tinyurl.com/6p9un6b5',
+      customContext = '',
       clientApiKey = '',
     } = await req.json();
 
@@ -20,58 +19,86 @@ export async function POST(req: NextRequest) {
       return NextResponse.json(
         {
           success: false,
-          error: 'Gemini API key is required. Please provide an API key or set GEMINI_API_KEY in your environment.',
+          error: 'Gemini API key is required. Please set GEMINI_API_KEY in your environment or enter it in the modal.',
         },
         { status: 400 }
       );
     }
 
-    const prompt = `You are an expert LinkedIn copywriter writing a high-performing post caption for a tech creator named ${authorName}.
+    const slideCount = Array.isArray(slides) ? slides.length : 5;
 
-Topic / Carousel Title: ${topic}
-Slide Count: ${slideCount}
-${customContext ? `Additional Context: ${customContext}` : ''}
+    const systemPrompt = `You are an elite LinkedIn tech influencer and software engineering copywriter writing an authoritative, comprehensive, viral long-form post for ${authorName}.
 
-You MUST follow this EXACT structural format and tone pattern (use markdown **bold** where text should be emphasized, as we convert it to LinkedIn Unicode bold):
+You are provided with ${slideCount} image slides from a tech carousel.
+YOUR PRIMARY MISSION:
+1. THOROUGHLY SCAN AND READ EVERY SINGLE SLIDE provided in the images (transcribe diagrams, patterns, architectures, key takeaways, code concepts, and tools).
+2. Write a MASTERCLASS-LEVEL, DEEP-DIVE LINKEDIN POST of MINIMUM 500 WORDS (aim for 550 - 750 words). Do NOT write a short summary. Provide rich, actionable, educational depth for every slide.
 
-[LINE 1]: **My first [Topic] took [timeframe/struggle].**
-[LINE 2]: **[Number] of those [timeframe] were spent just [common struggle/mistake].**
-[PARAGRAPH 1]: That's one of the biggest problems when you start [Topic context]. [2-3 sentences explaining why people get overwhelmed by choices/complexity].
-[TRANSITION]:
-**But [Topic] isn't a [single thing / simple concept].**
-**It's a stack of different layers / core patterns working together.**
+POST STRUCTURE REQUIREMENTS:
 
-[BREAKDOWN HEADER]:
-Here's a practical breakdown of the ${slideCount > 0 ? slideCount : 'key'} patterns/layers you need to understand:
+1. **VIRAL HOOK (Lines 1 & 2)**:
+   **[Bold personal / counter-intuitive struggle statement about the topic].**
+   **[Bold relatable statistic or mistake that 90% of engineers make].**
 
-[BULLET POINTS - Generate ${Math.min(Math.max(slideCount, 5), 8)} bullet points]:
-✔ **[Concept/Pattern Name]** — [Concise explanation with real-world tools, examples, or interview uses].
+2. **THE CORE PROBLEM & CONTEXT (2 detailed paragraphs)**:
+   Explain the real-world engineering challenge, why modern developers get overwhelmed by tools/patterns, and the costly mistakes teams make in production.
 
-[MINDSET SHIFT]:
-The mistake isn't [common minor issue].
-**The mistake is trying to learn all of them at once.**
-Start simple.
-Pick one pattern/tool, build something small, understand why each component exists, and only replace it when your application actually needs something different.
+3. **THE PHILOSOPHICAL SHIFT**:
+   **But [Topic] isn't [single tool / magic bullet].**
+   **It's a structured system of core patterns and architectural layers working together.**
 
-**You don't need the perfect [Topic].**
-**You need a [Topic] you actually understand.**
+4. **SLIDE-BY-SLIDE DEEP DIVE (Cover EVERY slide scanned from the images)**:
+   For EACH key concept/pattern shown in the slides, provide a detailed breakdown formatted with:
+   ✔ **[Slide Concept / Pattern Name]** — [2-4 sentences explaining what it is, why it matters, real-world tools/libraries, architectural trade-offs, and when to use it in production or interview scenarios].
 
-[ENGAGEMENT]:
-📌 **Save this before building your next project / preparing for interviews.**
-💬 Which pattern/layer do you find the most confusing or use the most?
+5. **PRODUCTION BEST PRACTICES & COMMON TRAPS**:
+   Highlight 3-4 practical engineering rules (e.g. When NOT to use complex patterns, how to benchmark, monitoring, and scaling advice).
 
-[FOOTER]:
-**Don't miss daily tech insights & verified job opportunities:**
-**WhatsApp** – ${whatsappLink} **Telegram** – ${telegramLink}
+6. **THE MINDSET SHIFT**:
+   The mistake isn't lack of information.
+   **The mistake is trying to master everything at once without building.**
+   Start simple. Master the fundamentals, understand the why behind each layer, and only add complexity when user scale demands it.
+   **You don't need the most complex stack.**
+   **You need a stack you actually understand and can debug in production.**
 
-Follow **${authorName}** for more AI, RAG, Python, SQL, DSA, System Design, and Software Engineering content.
+7. **ENGAGEMENT CALLOUT**:
+   📌 **Save this post for your next project architecture review or tech interview prep.**
+   💬 Which pattern/layer are you currently using or finding most challenging? Let's discuss in the comments!
 
-[5-6 relevant hashtags like #SystemDesign #SoftwareEngineering #Python #Coding #TechCareer]
+8. **COMMUNITY & BRANDING FOOTER**:
+   **Don't miss daily tech insights & verified job opportunities:**
+   **WhatsApp** – ${whatsappLink} **Telegram** – ${telegramLink}
 
-STRICT RULES:
-- Output ONLY the ready-to-post text.
-- Do NOT output preamble like "Here is your post:".
-- Tailor the bullet points and explanations specifically to the topic: "${topic}".`;
+   Follow **${authorName}** for more AI, RAG, Python, SQL, DSA, System Design, and Software Engineering content.
+
+   [6-8 relevant high-reach hashtags like #SystemDesign #SoftwareEngineering #Python #Coding #TechCareer #WebDevelopment #Programming]
+
+RULES:
+- Minimum length: 500 WORDS.
+- Output ONLY the ready-to-post LinkedIn text (no preamble like "Here is the post:").
+- Use markdown **bold** for key terms, titles, and hooks (it will be automatically converted to LinkedIn Unicode bold).`;
+
+    // Construct Multimodal parts array
+    const parts: any[] = [{ text: systemPrompt }];
+
+    if (customContext) {
+      parts.push({ text: `Additional User Context & Notes: ${customContext}` });
+    }
+
+    // Attach all slide images as inlineData base64
+    if (Array.isArray(slides) && slides.length > 0) {
+      for (const slide of slides) {
+        if (slide.dataUrl && typeof slide.dataUrl === 'string') {
+          const base64Data = slide.dataUrl.replace(/^data:image\/\w+;base64,/, '');
+          parts.push({
+            inline_data: {
+              mime_type: 'image/png',
+              data: base64Data,
+            },
+          });
+        }
+      }
+    }
 
     const models = [
       'gemini-3.6-flash',
@@ -92,12 +119,12 @@ STRICT RULES:
           body: JSON.stringify({
             contents: [
               {
-                parts: [{ text: prompt }],
+                parts,
               },
             ],
             generationConfig: {
               temperature: 0.7,
-              maxOutputTokens: 1200,
+              maxOutputTokens: 3000,
             },
           }),
         });
@@ -120,10 +147,10 @@ STRICT RULES:
     }
 
     if (!generatedText) {
-      throw new Error(lastError?.error?.message || 'Failed to generate caption with Gemini API.');
+      throw new Error(lastError?.error?.message || 'Failed to generate multimodal caption with Gemini Vision.');
     }
 
-    // Convert markdown **bold** into real mathematical Unicode bold for LinkedIn
+    // Convert markdown **bold** into mathematical Unicode bold for LinkedIn
     const linkedInFormattedCaption = formatMarkdownToLinkedInBold(generatedText);
 
     return NextResponse.json({
@@ -131,11 +158,11 @@ STRICT RULES:
       caption: linkedInFormattedCaption,
     });
   } catch (error: any) {
-    console.error('Caption generation error:', error);
+    console.error('Multimodal caption generation error:', error);
     return NextResponse.json(
       {
         success: false,
-        error: error.message || 'Failed to generate AI caption.',
+        error: error.message || 'Failed to generate multimodal AI caption.',
       },
       { status: 500 }
     );

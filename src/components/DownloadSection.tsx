@@ -11,6 +11,7 @@ import {
   FileText,
   Sparkles,
   Stamp,
+  SlidersHorizontal,
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { CarouselSlide } from '@/lib/types';
@@ -35,7 +36,18 @@ export function DownloadSection({
   const [isPdfGenerating, setIsPdfGenerating] = useState(false);
   const [downloadSuccessType, setDownloadSuccessType] = useState<'pdf' | 'zip' | null>(null);
 
-  const totalBytes = slides.reduce((acc, s) => acc + s.sizeBytes, 0);
+  // Skip First / Last Slide Export Options
+  const [skipFirstSlide, setSkipFirstSlide] = useState(false);
+  const [skipLastSlide, setSkipLastSlide] = useState(false);
+
+  // Filter slides for export
+  const exportSlides = slides.filter((_, idx) => {
+    if (idx === 0 && skipFirstSlide) return false;
+    if (idx === slides.length - 1 && skipLastSlide) return false;
+    return true;
+  });
+
+  const totalBytes = exportSlides.reduce((acc, s) => acc + s.sizeBytes, 0);
   const totalMb = (totalBytes / (1024 * 1024)).toFixed(1);
 
   const triggerConfetti = () => {
@@ -52,13 +64,16 @@ export function DownloadSection({
   };
 
   const handleDownloadPdf = async () => {
-    if (slides.length === 0 || isPdfGenerating) return;
+    if (exportSlides.length === 0 || isPdfGenerating) {
+      alert('Please select at least 1 slide to export.');
+      return;
+    }
 
     setIsPdfGenerating(true);
     setDownloadSuccessType(null);
 
     try {
-      const pdfBlob = await generateLinkedInPdf(slides);
+      const pdfBlob = await generateLinkedInPdf(exportSlides);
       saveAs(pdfBlob, 'linkedin-carousel.pdf');
       setDownloadSuccessType('pdf');
       triggerConfetti();
@@ -71,7 +86,10 @@ export function DownloadSection({
   };
 
   const handleDownloadZip = async () => {
-    if (slides.length === 0 || isZipping) return;
+    if (exportSlides.length === 0 || isZipping) {
+      alert('Please select at least 1 slide to export.');
+      return;
+    }
 
     setIsZipping(true);
     setDownloadSuccessType(null);
@@ -79,8 +97,8 @@ export function DownloadSection({
     try {
       const zip = new JSZip();
 
-      // Ensure proper 01, 02, ... order
-      slides.forEach((slide, idx) => {
+      // Ensure proper 01, 02, ... sequential numbering
+      exportSlides.forEach((slide, idx) => {
         const slideNumber = String(idx + 1).padStart(2, '0');
         const filename = `carousel-${slideNumber}.png`;
         const base64Data = slide.dataUrl.replace(/^data:image\/\w+;base64,/, '');
@@ -102,7 +120,7 @@ export function DownloadSection({
         const res = await fetch('/api/download-zip', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ slides }),
+          body: JSON.stringify({ slides: exportSlides }),
         });
 
         if (!res.ok) throw new Error('Server ZIP download failed');
@@ -120,9 +138,50 @@ export function DownloadSection({
   };
 
   return (
-    <div className="w-full sketch-card p-6 sm:p-8 relative">
+    <div className="w-full sketch-card p-6 sm:p-8 relative space-y-6">
       <div className="tape-top tape-pink" />
 
+      {/* 1. Skip First / Last Slide Export Options Bar */}
+      {slides.length > 1 && (
+        <div className="p-3.5 rounded-2xl bg-[var(--bg-page)] border-2 border-[var(--border-ink)] flex flex-wrap items-center justify-between gap-3 text-xs font-display">
+          <div className="flex items-center gap-2 text-[var(--text-main)] font-black">
+            <SlidersHorizontal className="w-4 h-4 stroke-[2.5]" />
+            <span>Export Filter Options:</span>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-4">
+            {/* Skip First Slide Toggle */}
+            <label className="flex items-center gap-2 cursor-pointer select-none font-bold text-[var(--text-main)] hover:text-[#F43F5E] transition-colors">
+              <input
+                type="checkbox"
+                checked={skipFirstSlide}
+                onChange={(e) => setSkipFirstSlide(e.target.checked)}
+                className="w-4 h-4 accent-[#1D1815] cursor-pointer rounded"
+              />
+              <span>Skip First Slide (Cover)</span>
+            </label>
+
+            {/* Skip Last Slide Toggle */}
+            <label className="flex items-center gap-2 cursor-pointer select-none font-bold text-[var(--text-main)] hover:text-[#F43F5E] transition-colors">
+              <input
+                type="checkbox"
+                checked={skipLastSlide}
+                onChange={(e) => setSkipLastSlide(e.target.checked)}
+                className="w-4 h-4 accent-[#1D1815] cursor-pointer rounded"
+              />
+              <span>Skip Last Slide (Outro)</span>
+            </label>
+
+            {(skipFirstSlide || skipLastSlide) && (
+              <span className="font-marker text-xs px-2 py-0.5 rounded-full bg-[#FDE047] text-[#1D1815] border border-[#1D1815]">
+                Exporting {exportSlides.length} of {slides.length} slides
+              </span>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* 2. Main Summary & Action Deck */}
       <div className="flex flex-col lg:flex-row items-center justify-between gap-6">
         {/* Left: Summary Info */}
         <div className="flex items-center gap-4 sm:gap-5 text-center lg:text-left">
@@ -143,7 +202,7 @@ export function DownloadSection({
             <div className="flex flex-wrap items-center justify-center lg:justify-start gap-3 mt-2 text-xs font-bold text-[var(--text-muted)] font-mono">
               <span className="flex items-center gap-1.5 text-[var(--text-main)]">
                 <Layers className="w-3.5 h-3.5 stroke-[2.5]" />
-                {slides.length} Sequenced Slides
+                {exportSlides.length} Sequenced Slides
               </span>
               <span>•</span>
               <span>~{totalMb} MB Total Master PNGs</span>

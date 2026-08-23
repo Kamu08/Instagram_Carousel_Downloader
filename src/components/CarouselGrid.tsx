@@ -171,7 +171,7 @@ export function CarouselGrid({
         </div>
       </div>
 
-      {/* Sortable Grid with Wider 3-Column Layout */}
+      {/* Sortable Grid: 4 Cards Per Row on Desktop */}
       <DndContext
         sensors={sensors}
         collisionDetection={closestCenter}
@@ -180,7 +180,7 @@ export function CarouselGrid({
         onDragCancel={handleDragCancel}
       >
         <SortableContext items={slides.map((s) => s.id)} strategy={rectSortingStrategy}>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-7 sm:gap-8">
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-5 sm:gap-6">
             {slides.map((slide, index) => (
               <SortableSlide
                 key={slide.id}

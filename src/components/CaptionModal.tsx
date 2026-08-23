@@ -10,8 +10,7 @@ import {
   Key,
   AlertCircle,
   Scan,
-  FileText,
-  Sliders,
+  Edit3,
 } from 'lucide-react';
 import { CarouselSlide } from '@/lib/types';
 
@@ -26,7 +25,7 @@ export function CaptionModal({
   onClose,
   slides,
 }: CaptionModalProps) {
-  const [topic, setTopic] = useState('Tech & System Architecture Breakdown');
+  const [topic, setTopic] = useState('FAANG SQL & System Design Patterns');
   const [authorName, setAuthorName] = useState('Kamal Sharma');
   const [whatsappLink, setWhatsappLink] = useState('https://tinyurl.com/mwmbwytv');
   const [telegramLink, setTelegramLink] = useState('https://tinyurl.com/6p9un6b5');
@@ -144,11 +143,11 @@ export function CaptionModal({
                   Vision Scanned ✨
                 </span>
                 <span className="font-marker text-xs px-2 py-0.5 rounded-full bg-[#FDE047] text-[#1D1815] border border-[#1D1815]">
-                  Punchy &amp; High-Impact
+                  Live Editable Text ✍️
                 </span>
               </div>
               <p className="font-hand text-base text-[var(--text-muted)] font-bold -mt-1">
-                Optimized, skimmable LinkedIn post with native mathematical Unicode bolding
+                Full-length post with WhatsApp/Telegram footer &amp; 5 hashtags • Click to edit directly
               </p>
             </div>
           </div>
@@ -287,18 +286,24 @@ export function CaptionModal({
               ) : (
                 <>
                   <Sparkles className="w-4 h-4 stroke-[2.5]" />
-                  <span>⚡ Generate Optimized Post</span>
+                  <span>⚡ Generate Complete Post</span>
                 </>
               )}
             </button>
           </div>
 
-          {/* Generated Preview Column with Sleek Custom Scrollbar */}
+          {/* Generated Preview Column with LIVE EDITABLE TEXTAREA */}
           <div className="lg:col-span-7 p-5 sm:p-6 bg-[var(--bg-page)] flex flex-col justify-between overflow-hidden">
             <div className="flex items-center justify-between mb-3">
-              <span className="font-display font-black text-xs uppercase tracking-wider text-[var(--text-muted)]">
-                Ready-to-Post LinkedIn Output
-              </span>
+              <div className="flex items-center gap-2">
+                <span className="font-display font-black text-xs uppercase tracking-wider text-[var(--text-muted)]">
+                  Ready-to-Post LinkedIn Output
+                </span>
+                <span className="text-[11px] font-bold px-2 py-0.5 rounded-md bg-[#FAF8F3] dark:bg-[#1C1916] border border-[var(--border-ink)]/30 text-[var(--text-muted)] flex items-center gap-1">
+                  <Edit3 className="w-3 h-3" />
+                  <span>Editable</span>
+                </span>
+              </div>
 
               {generatedCaption && (
                 <div className="flex items-center gap-2 text-xs font-mono">
@@ -311,29 +316,38 @@ export function CaptionModal({
               )}
             </div>
 
-            {/* Optimized Content Box with Custom Sleek Scrollbar */}
-            <div className="flex-1 min-h-[340px] max-h-[55vh] p-5 rounded-2xl border-2 border-[var(--border-ink)] bg-[var(--bg-card)] shadow-[3px_3px_0px_var(--shadow-ink)] overflow-y-auto custom-scrollbar font-sans text-sm leading-relaxed text-[var(--text-main)] whitespace-pre-wrap selection:bg-[#FDE047]">
+            {/* Live Editable Textarea with Sleek Custom Scrollbar */}
+            <div className="relative flex-1 min-h-[350px] max-h-[55vh]">
               {generatedCaption ? (
-                generatedCaption
+                <textarea
+                  value={generatedCaption}
+                  onChange={(e) => setGeneratedCaption(e.target.value)}
+                  className="w-full h-full p-5 rounded-2xl border-2 border-[var(--border-ink)] bg-[var(--bg-card)] shadow-[3px_3px_0px_var(--shadow-ink)] overflow-y-auto custom-scrollbar font-sans text-sm leading-relaxed text-[var(--text-main)] whitespace-pre-wrap selection:bg-[#FDE047] focus:outline-none focus:ring-2 focus:ring-[#FDE047] resize-none"
+                  placeholder="Your generated LinkedIn post will appear here. You can edit line spacing, text, or emojis directly."
+                />
               ) : (
-                <div className="h-full flex flex-col items-center justify-center text-center p-6 text-[var(--text-muted)] space-y-2">
+                <div className="h-full rounded-2xl border-2 border-[var(--border-ink)] bg-[var(--bg-card)] shadow-[3px_3px_0px_var(--shadow-ink)] flex flex-col items-center justify-center text-center p-6 text-[var(--text-muted)] space-y-2">
                   <Sparkles className="w-10 h-10 opacity-40 animate-pulse text-[#FDE047]" />
                   <p className="font-display font-bold text-sm">
-                    Click &ldquo;Generate Optimized Post&rdquo;
+                    Click &ldquo;Generate Complete Post&rdquo;
                   </p>
                   <p className="font-hand text-base font-bold opacity-80">
-                    Creates a punchy, skimmable post with Unicode bolding and bullet takeaways
+                    Generates a complete post with full bullet points, community footer &amp; 5 hashtags
                   </p>
                 </div>
               )}
             </div>
 
             {generatedCaption && (
-              <div className="mt-4 flex items-center justify-end gap-3">
+              <div className="mt-4 flex items-center justify-between gap-3">
+                <span className="font-hand text-sm font-bold text-[var(--text-muted)]">
+                  💡 Tip: You can edit or add extra line breaks directly in the box above!
+                </span>
+
                 <button
                   type="button"
                   onClick={handleCopy}
-                  className="px-6 py-3 rounded-2xl bg-[#FDE047] hover:bg-[#FACC15] sketch-btn text-[#1D1815] font-display font-black text-xs sm:text-sm flex items-center gap-2 cursor-pointer uppercase tracking-wider"
+                  className="px-6 py-3 rounded-2xl bg-[#FDE047] hover:bg-[#FACC15] sketch-btn text-[#1D1815] font-display font-black text-xs sm:text-sm flex items-center gap-2 cursor-pointer uppercase tracking-wider shrink-0"
                 >
                   {copied ? (
                     <>

@@ -4,7 +4,7 @@ import { formatMarkdownToLinkedInBold } from '@/lib/unicode-bold';
 export async function POST(req: NextRequest) {
   try {
     const {
-      topic = 'Tech & Architecture Breakdown',
+      topic = 'SQL & System Architecture Breakdown',
       slides = [],
       authorName = 'Kamal Sharma',
       whatsappLink = 'https://tinyurl.com/mwmbwytv',
@@ -25,67 +25,60 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const slideCount = Array.isArray(slides) ? slides.length : 5;
+    const slideCount = Array.isArray(slides) ? slides.length : 6;
 
     const systemPrompt = `You are an elite LinkedIn copywriter writing for tech creator ${authorName}.
 
 Topic / Carousel: ${topic}
-Total Slides: ${slideCount}
-${customContext ? `Context notes: ${customContext}` : ''}
+Total Slides Scanned: ${slideCount}
+${customContext ? `Custom notes: ${customContext}` : ''}
 
-MISSION:
-Scan the provided slide images and craft a PUNCHY, SKIMMABLE, HIGH-IMPACT LinkedIn post (~200 - 320 words).
-DO NOT write huge walls of text or overly long academic paragraphs. Keep it clean, whitespace-friendly, and actionable.
+CRITICAL RULES:
+1. You MUST generate the ENTIRE post from start to finish without getting cut off.
+2. The Community Footer (WhatsApp, Telegram, Follow ${authorName}, and 5 relevant hashtags) is STRICTLY MANDATORY in every response.
+3. Every bullet point must be concise (1-2 lines), highly actionable, and derived from the scanned slide images.
+4. Use markdown **bold** around headings and key phrases (which gets converted to mathematical Unicode bold for LinkedIn).
 
-FOLLOW THIS EXACT BLUEPRINT (use markdown **bold** where text should be emphasized, it converts to LinkedIn Unicode bold):
+FOLLOW THIS EXACT TEMPLATE STRUCTURE:
 
-[LINE 1 - Hook]:
 **My first [Topic] took [timeframe/struggle].**
 
-[LINE 2 - Relatable struggle]:
-**[Number] of those [timeframe] were spent just [common struggle/choosing wrong tools].**
+**[Number] of those [timeframe] were spent just [common struggle/mistake].**
 
-[SHORT PARAGRAPH - 2 sentences max]:
-That's one of the biggest problems when you start building with [Topic]. There are dozens of tools and patterns, and it's easy to spend more time comparing frameworks than actually building the application.
+That's one of the biggest problems when you start preparing/building with [Topic]. There are dozens of patterns and queries, and it's easy to spend more time memorizing syntax than actually understanding the underlying mental models.
 
-[TRANSITION]:
-**But [Topic] isn't a single tool.**
-**It's a stack of core layers working together.**
+**But [Topic] mastery isn't about memorizing queries.**
+**It's a stack of core patterns working together.**
 
-Here's a practical breakdown of the ${slideCount > 0 ? slideCount : 'key'} patterns you need to understand:
+Here's a practical breakdown of the ${slideCount > 0 ? slideCount : 5} patterns you need to know:
 
-[BULLET POINTS - 1 bullet per key slide concept, max 1-2 crisp lines each]:
-✔ **[Pattern/Layer Name]** — [Crisp, high-impact 1-line explanation with tools/concepts].
-✔ **[Pattern/Layer Name]** — [Crisp, high-impact 1-line explanation with tools/concepts].
-✔ **[Pattern/Layer Name]** — [Crisp, high-impact 1-line explanation with tools/concepts].
-✔ **[Pattern/Layer Name]** — [Crisp, high-impact 1-line explanation with tools/concepts].
-✔ **[Pattern/Layer Name]** — [Crisp, high-impact 1-line explanation with tools/concepts].
+✔ **[Slide 1 Pattern Name]** — [1-2 lines on what it is, practical query/architecture use, and interview tip].
 
-[MINDSET SHIFT]:
-The mistake isn't lack of tutorials.
-**The mistake is trying to learn all of them at once.**
+✔ **[Slide 2 Pattern Name]** — [1-2 lines on what it is, practical query/architecture use, and interview tip].
 
-Start simple. Pick one pattern, build something small, and only add complexity when your application actually needs it.
+✔ **[Slide 3 Pattern Name]** — [1-2 lines on what it is, practical query/architecture use, and interview tip].
 
-**You don't need the perfect stack.**
-**You need a stack you actually understand.**
+✔ **[Slide 4 Pattern Name]** — [1-2 lines on what it is, practical query/architecture use, and interview tip].
 
-[ENGAGEMENT]:
-📌 **Save this for your next project or interview prep.**
-💬 Which layer/pattern do you use the most?
+✔ **[Slide 5 Pattern Name]** — [1-2 lines on what it is, practical query/architecture use, and interview tip].
 
-[COMMUNITY FOOTER]:
+The mistake isn't lack of practice problems.
+**The mistake is trying to memorize every edge case at once.**
+
+Start simple. Pick one core pattern, master why it exists, and only optimize when scale demands it.
+
+**You don't need to memorize 500 questions.**
+**You need 10 patterns you actually understand.**
+
+📌 **Save this before your next technical interview or architecture review.**
+💬 Which pattern/query do you find the most confusing? Let's discuss below!
+
 **Don't miss daily tech insights & verified job opportunities:**
 **WhatsApp** – ${whatsappLink} **Telegram** – ${telegramLink}
 
 Follow **${authorName}** for more AI, RAG, Python, SQL, DSA, System Design, and Software Engineering content.
 
-[5-6 relevant hashtags like #SystemDesign #SoftwareEngineering #Python #Coding #TechCareer]
-
-STRICT RULES:
-- Keep the post concise, clean, and punchy (~200 - 320 words).
-- Do NOT output preamble (like "Here is your post:").
-- Strictly close all markdown **bold** tags so every title is properly formatted.`;
+#SQL #SystemDesign #Python #SoftwareEngineering #TechCareers`;
 
     // Construct Multimodal parts array
     const parts: any[] = [{ text: systemPrompt }];
@@ -113,7 +106,7 @@ STRICT RULES:
     ];
 
     let lastError: any = null;
-    let generatedText = '';
+    let rawGeneratedText = '';
 
     for (const model of models) {
       try {
@@ -129,7 +122,7 @@ STRICT RULES:
             ],
             generationConfig: {
               temperature: 0.7,
-              maxOutputTokens: 2000,
+              maxOutputTokens: 4000,
             },
           }),
         });
@@ -143,7 +136,7 @@ STRICT RULES:
         const data = await response.json();
         const candidate = data.candidates?.[0]?.content?.parts?.[0]?.text;
         if (candidate) {
-          generatedText = candidate.trim();
+          rawGeneratedText = candidate.trim();
           break;
         }
       } catch (e) {
@@ -151,19 +144,25 @@ STRICT RULES:
       }
     }
 
-    if (!generatedText) {
+    if (!rawGeneratedText) {
       throw new Error(lastError?.error?.message || 'Failed to generate caption with Gemini Vision.');
     }
 
+    // Ensure Mandatory Community Footer is present even if model trimmed
+    let fullPostText = rawGeneratedText;
+    if (!fullPostText.includes(whatsappLink) || !fullPostText.includes(telegramLink)) {
+      fullPostText += `\n\n📌 **Save this before your next technical interview or architecture review.**\n💬 Which pattern do you find most challenging?\n\n**Don't miss daily tech insights & verified job opportunities:**\n**WhatsApp** – ${whatsappLink} **Telegram** – ${telegramLink}\n\nFollow **${authorName}** for more AI, RAG, Python, SQL, DSA, System Design, and Software Engineering content.\n\n#SQL #SystemDesign #Python #SoftwareEngineering #TechCareers`;
+    }
+
     // Convert markdown **bold** into mathematical Unicode bold for LinkedIn
-    const linkedInFormattedCaption = formatMarkdownToLinkedInBold(generatedText);
+    const linkedInFormattedCaption = formatMarkdownToLinkedInBold(fullPostText);
 
     return NextResponse.json({
       success: true,
       caption: linkedInFormattedCaption,
     });
   } catch (error: any) {
-    console.error('Multimodal caption generation error:', error);
+    console.error('Caption generation error:', error);
     return NextResponse.json(
       {
         success: false,

@@ -22,15 +22,13 @@ import {
   Sliders,
   CheckCircle2,
   Loader2,
+  Target,
 } from 'lucide-react';
 import {
   CarouselSlide,
   LinkedInOptions,
   LinkedInPreset,
-  ResizeFitMode,
-  BackgroundMode,
 } from '@/lib/types';
-import { WatermarkPosition, WatermarkStyle } from '@/lib/watermark';
 
 interface StudioCommandDeckProps {
   slides: CarouselSlide[];
@@ -47,6 +45,7 @@ interface StudioCommandDeckProps {
   onOpenCoverModal: () => void;
   onOpenCtaModal: () => void;
   onOpenCaptionModal: () => void;
+  onOpenHookLabModal: () => void;
 }
 
 type TabType = 'dimensions' | 'watermark' | 'filters' | 'ai-tools' | null;
@@ -66,6 +65,7 @@ export function StudioCommandDeck({
   onOpenCoverModal,
   onOpenCtaModal,
   onOpenCaptionModal,
+  onOpenHookLabModal,
 }: StudioCommandDeckProps) {
   const [activeTab, setActiveTab] = useState<TabType>(null);
   const [customW, setCustomW] = useState(linkedinOptions.customWidth || 1080);
@@ -448,9 +448,24 @@ export function StudioCommandDeck({
             </div>
           )}
 
-          {/* TAB 4: AI & CREATIVE TOOLS */}
+          {/* TAB 4: AI & CREATIVE TOOLS (With Viral Hook A/B Lab!) */}
           {activeTab === 'ai-tools' && (
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+              {/* Viral Hook A/B Lab */}
+              <button
+                type="button"
+                onClick={onOpenHookLabModal}
+                className="p-4 rounded-2xl bg-[#F5A3B3] hover:bg-[#FB7185] border-2 border-[#1D1815] shadow-[3px_3px_0px_#1D1815] text-[#1D1815] text-left transition-all cursor-pointer flex flex-col justify-between"
+              >
+                <div className="flex items-center gap-2 font-display font-black text-sm">
+                  <Target className="w-4 h-4 stroke-[2.5]" />
+                  <span>Viral Hook A/B Lab</span>
+                </div>
+                <span className="font-hand text-xs font-bold mt-1 opacity-90">
+                  5 strategic scroll-stopping hooks
+                </span>
+              </button>
+
               {/* Cover Slide Generator */}
               <button
                 type="button"
@@ -462,7 +477,7 @@ export function StudioCommandDeck({
                   <span>Cover Slide Generator</span>
                 </div>
                 <span className="font-hand text-xs font-bold mt-1 opacity-90">
-                  Bubble typography sticker cover slide
+                  Bubble typography sticker cover
                 </span>
               </button>
 
@@ -489,10 +504,10 @@ export function StudioCommandDeck({
               >
                 <div className="flex items-center gap-2 font-display font-black text-sm">
                   <Sparkles className="w-4 h-4 stroke-[2.5]" />
-                  <span>Gemini AI Post Caption</span>
+                  <span>Gemini AI Caption</span>
                 </div>
                 <span className="font-hand text-xs font-bold mt-1 opacity-90">
-                  Vision scanned 500+ word LinkedIn copy
+                  Vision scanned LinkedIn post
                 </span>
               </button>
             </div>

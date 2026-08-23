@@ -11,6 +11,12 @@ import {
   AlertCircle,
   Scan,
   Edit3,
+  Target,
+  Flame,
+  BookOpen,
+  Layers,
+  Briefcase,
+  Zap,
 } from 'lucide-react';
 import { CarouselSlide } from '@/lib/types';
 
@@ -18,12 +24,26 @@ interface CaptionModalProps {
   isOpen: boolean;
   onClose: () => void;
   slides: CarouselSlide[];
+  onOpenHookLab?: () => void;
+  initialHookAngle?: string;
+  initialCustomHook?: string;
 }
+
+const HOOK_ANGLES = [
+  { id: 'contrarian', label: '🔥 Contrarian', icon: Flame, desc: 'Calls out misconceptions' },
+  { id: 'story', label: '📖 Story', icon: BookOpen, desc: 'Personal struggle to success' },
+  { id: 'framework', label: '⚡ Cheat Sheet', icon: Layers, desc: 'Core patterns & mental models' },
+  { id: 'career', label: '💼 Senior Mindset', icon: Briefcase, desc: 'Staff engineer perspective' },
+  { id: 'actionable', label: '🎯 Direct Action', icon: Zap, desc: 'Fast 2-min breakdown' },
+];
 
 export function CaptionModal({
   isOpen,
   onClose,
   slides,
+  onOpenHookLab,
+  initialHookAngle = 'contrarian',
+  initialCustomHook = '',
 }: CaptionModalProps) {
   const [topic, setTopic] = useState('FAANG SQL & System Design Patterns');
   const [authorName, setAuthorName] = useState('Kamal Sharma');
@@ -33,10 +53,23 @@ export function CaptionModal({
   const [apiKey, setApiKey] = useState('');
   const [showApiKeyInput, setShowApiKeyInput] = useState(false);
 
+  const [selectedHookAngle, setSelectedHookAngle] = useState(initialHookAngle);
+  const [customHookText, setCustomHookText] = useState(initialCustomHook);
+
   const [generatedCaption, setGeneratedCaption] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+
+  // Sync initial props
+  useEffect(() => {
+    if (initialCustomHook) {
+      setCustomHookText(initialCustomHook);
+    }
+    if (initialHookAngle) {
+      setSelectedHookAngle(initialHookAngle);
+    }
+  }, [initialCustomHook, initialHookAngle]);
 
   // Load custom API key from localStorage if saved
   useEffect(() => {
@@ -59,12 +92,14 @@ export function CaptionModal({
 
   if (!isOpen) return null;
 
-  const handleGenerate = async () => {
+  const handleGenerate = async (overrideAngle?: string) => {
     setIsLoading(true);
     setErrorMessage(null);
 
+    const activeAngle = overrideAngle || selectedHookAngle;
+
     try {
-      // Send slide images for vision scan
+      // Send slide images for vision scan + hook angle
       const res = await fetch('/api/generate-caption', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -76,6 +111,8 @@ export function CaptionModal({
           telegramLink,
           customContext,
           clientApiKey: apiKey,
+          hookAngle: activeAngle,
+          customHookText,
         }),
       });
 
@@ -137,22 +174,37 @@ export function CaptionModal({
             <div>
               <div className="flex items-center gap-2">
                 <h3 className="font-display font-black text-lg text-[var(--text-main)]">
-                  Kamal Sharma AI Caption Studio
+                  AI Caption &amp; Viral Hook Studio
                 </h3>
                 <span className="font-marker text-xs px-2.5 py-0.5 rounded-full bg-[#A7F3D0] text-[#1D1815] border border-[#1D1815]">
                   Vision Scanned ✨
                 </span>
-                <span className="font-marker text-xs px-2 py-0.5 rounded-full bg-[#FDE047] text-[#1D1815] border border-[#1D1815]">
-                  Live Editable Text ✍️
+                <span className="font-marker text-xs px-2 py-0.5 rounded-full bg-[#F5A3B3] text-[#1D1815] border border-[#1D1815]">
+                  Hook Integrated 🎯
                 </span>
               </div>
               <p className="font-hand text-base text-[var(--text-muted)] font-bold -mt-1">
-                Full-length post with WhatsApp/Telegram footer &amp; 5 hashtags • Click to edit directly
+                Select your viral hook strategy to generate the full post in 1 click
               </p>
             </div>
           </div>
 
           <div className="flex items-center gap-2">
+            {onOpenHookLab && (
+              <button
+                type="button"
+                onClick={() => {
+                  onClose();
+                  onOpenHookLab();
+                }}
+                className="px-3 py-1.5 rounded-xl border-2 border-[#1D1815] bg-[#F5A3B3] text-[#1D1815] font-display font-black text-xs flex items-center gap-1.5 shadow-[1.5px_1.5px_0px_#1D1815] cursor-pointer hover:bg-[#FB7185] transition-all"
+                title="A/B Test 5 Hook Angles"
+              >
+                <Target className="w-3.5 h-3.5 stroke-[2.5]" />
+                <span className="hidden sm:inline">A/B Test Hooks</span>
+              </button>
+            )}
+
             <button
               type="button"
               onClick={() => setShowApiKeyInput(!showApiKeyInput)}
@@ -207,22 +259,40 @@ export function CaptionModal({
 
         {/* Content Body */}
         <div className="flex-1 grid grid-cols-1 lg:grid-cols-12 overflow-hidden">
-          {/* Form Settings */}
+          {/* Form Settings & Hook Strategy Selector */}
           <div className="lg:col-span-5 p-5 sm:p-6 overflow-y-auto custom-scrollbar space-y-4 border-b lg:border-b-0 lg:border-r-2 border-[var(--border-ink)]/20">
-            {/* Visual Scan Badge */}
-            <div className="p-3.5 rounded-2xl bg-[#A7F3D0]/35 border-2 border-[#1D1815] text-xs font-display">
-              <div className="flex items-center gap-2 font-black text-[#1D1815]">
-                <Scan className="w-4 h-4 text-[#059669]" />
-                <span>Multimodal Vision Active</span>
+            {/* 1. Viral Hook Strategy Selector */}
+            <div>
+              <label className="block font-display text-xs font-black uppercase text-[var(--text-muted)] mb-1.5">
+                🎯 Select Viral Hook Angle:
+              </label>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
+                {HOOK_ANGLES.map((angle) => {
+                  const isSelected = selectedHookAngle === angle.id;
+                  return (
+                    <button
+                      key={angle.id}
+                      type="button"
+                      onClick={() => {
+                        setSelectedHookAngle(angle.id);
+                        setCustomHookText('');
+                      }}
+                      className={`px-2.5 py-2 rounded-xl border-2 border-[var(--border-ink)] text-xs font-display font-black text-left transition-all cursor-pointer ${
+                        isSelected
+                          ? 'bg-[#FDE047] text-[#1D1815] shadow-[2px_2px_0px_var(--shadow-ink)] -translate-y-0.5'
+                          : 'bg-[var(--bg-page)] text-[var(--text-main)] hover:bg-[var(--bg-card)]'
+                      }`}
+                    >
+                      <span>{angle.label}</span>
+                    </button>
+                  );
+                })}
               </div>
-              <p className="font-hand text-sm font-bold text-[#1D1815]/80 mt-1">
-                Scans all {slides.length} slides to extract key concepts, tools &amp; architectures.
-              </p>
             </div>
 
             <div>
               <label className="block font-display text-xs font-black uppercase text-[var(--text-muted)] mb-1.5">
-                Topic / Carousel Title (Optional Context)
+                Topic / Carousel Title
               </label>
               <input
                 type="text"
@@ -261,13 +331,16 @@ export function CaptionModal({
 
             <div>
               <label className="block font-display text-xs font-black uppercase text-[var(--text-muted)] mb-1.5">
-                Extra Custom Notes (Optional)
+                Custom Hook / Notes (Optional)
               </label>
               <textarea
                 rows={2}
-                value={customContext}
-                onChange={(e) => setCustomContext(e.target.value)}
-                placeholder="e.g. Highlight Sliding Window & Two Pointers..."
+                value={customHookText || customContext}
+                onChange={(e) => {
+                  if (customHookText) setCustomHookText(e.target.value);
+                  else setCustomContext(e.target.value);
+                }}
+                placeholder="Custom opening hook or notes (e.g. Highlight Sliding Window & Two Pointers)..."
                 className="w-full px-3.5 py-2 rounded-xl border-2 border-[var(--border-ink)] bg-[var(--input-bg)] font-display text-xs text-[var(--text-main)] focus:outline-none resize-none"
               />
             </div>
@@ -275,29 +348,29 @@ export function CaptionModal({
             <button
               type="button"
               disabled={isLoading || slides.length === 0}
-              onClick={handleGenerate}
+              onClick={() => handleGenerate()}
               className="w-full py-3.5 rounded-2xl bg-[#A7F3D0] hover:bg-[#6EE7B7] sketch-btn text-[#1D1815] font-display font-black text-sm flex items-center justify-center gap-2 cursor-pointer uppercase tracking-wider disabled:opacity-50"
             >
               {isLoading ? (
                 <>
                   <Loader2 className="w-4 h-4 animate-spin stroke-[3]" />
-                  <span>Scanning Slides &amp; Writing Post...</span>
+                  <span>Scanning &amp; Generating Post...</span>
                 </>
               ) : (
                 <>
                   <Sparkles className="w-4 h-4 stroke-[2.5]" />
-                  <span>⚡ Generate Complete Post</span>
+                  <span>⚡ Generate Post with {HOOK_ANGLES.find(h => h.id === selectedHookAngle)?.label}</span>
                 </>
               )}
             </button>
           </div>
 
-          {/* Generated Preview Column with LIVE EDITABLE TEXTAREA */}
+          {/* Generated Preview Column with Quick Hook Swapper */}
           <div className="lg:col-span-7 p-5 sm:p-6 bg-[var(--bg-page)] flex flex-col justify-between overflow-hidden">
-            <div className="flex items-center justify-between mb-3">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-3">
               <div className="flex items-center gap-2">
                 <span className="font-display font-black text-xs uppercase tracking-wider text-[var(--text-muted)]">
-                  Ready-to-Post LinkedIn Output
+                  Ready-to-Post Output
                 </span>
                 <span className="text-[11px] font-bold px-2 py-0.5 rounded-md bg-[#FAF8F3] dark:bg-[#1C1916] border border-[var(--border-ink)]/30 text-[var(--text-muted)] flex items-center gap-1">
                   <Edit3 className="w-3 h-3" />
@@ -305,13 +378,31 @@ export function CaptionModal({
                 </span>
               </div>
 
+              {/* Live Hook Angle Switcher */}
               {generatedCaption && (
-                <div className="flex items-center gap-2 text-xs font-mono">
-                  <span className="px-2.5 py-0.5 rounded-full border border-[#1D1815] bg-[#FDE047] text-[#1D1815] font-black">
-                    {wordCount} Words
+                <div className="flex items-center gap-1.5 overflow-x-auto custom-scrollbar py-0.5">
+                  <span className="text-[11px] font-display font-black text-[var(--text-muted)] shrink-0">
+                    Switch Hook:
                   </span>
-                  <span className="text-[var(--text-muted)]">•</span>
-                  <span className="text-[var(--text-muted)]">{charCount} chars</span>
+                  {HOOK_ANGLES.map((angle) => (
+                    <button
+                      key={angle.id}
+                      type="button"
+                      disabled={isLoading}
+                      onClick={() => {
+                        setSelectedHookAngle(angle.id);
+                        handleGenerate(angle.id);
+                      }}
+                      className={`px-2 py-0.5 rounded-lg border text-[11px] font-display font-black transition-all cursor-pointer shrink-0 ${
+                        selectedHookAngle === angle.id
+                          ? 'bg-[#FDE047] text-[#1D1815] border-[#1D1815] shadow-[1px_1px_0px_#1D1815]'
+                          : 'bg-[var(--bg-card)] text-[var(--text-muted)] hover:text-[var(--text-main)] border-[var(--border-ink)]/30'
+                      }`}
+                      title={angle.desc}
+                    >
+                      {angle.label}
+                    </button>
+                  ))}
                 </div>
               )}
             </div>
@@ -329,10 +420,10 @@ export function CaptionModal({
                 <div className="h-full rounded-2xl border-2 border-[var(--border-ink)] bg-[var(--bg-card)] shadow-[3px_3px_0px_var(--shadow-ink)] flex flex-col items-center justify-center text-center p-6 text-[var(--text-muted)] space-y-2">
                   <Sparkles className="w-10 h-10 opacity-40 animate-pulse text-[#FDE047]" />
                   <p className="font-display font-bold text-sm">
-                    Click &ldquo;Generate Complete Post&rdquo;
+                    Pick a Hook Angle and Click &ldquo;Generate Post&rdquo;
                   </p>
                   <p className="font-hand text-base font-bold opacity-80">
-                    Generates a complete post with full bullet points, community footer &amp; 5 hashtags
+                    AI crafts a viral hook + scans all slides to build a complete LinkedIn post
                   </p>
                 </div>
               )}
@@ -340,9 +431,13 @@ export function CaptionModal({
 
             {generatedCaption && (
               <div className="mt-4 flex items-center justify-between gap-3">
-                <span className="font-hand text-sm font-bold text-[var(--text-muted)]">
-                  💡 Tip: You can edit or add extra line breaks directly in the box above!
-                </span>
+                <div className="flex items-center gap-2 text-xs font-mono">
+                  <span className="px-2.5 py-0.5 rounded-full border border-[#1D1815] bg-[#FDE047] text-[#1D1815] font-black">
+                    {wordCount} Words
+                  </span>
+                  <span className="text-[var(--text-muted)]">•</span>
+                  <span className="text-[var(--text-muted)]">{charCount} chars</span>
+                </div>
 
                 <button
                   type="button"

@@ -11,6 +11,8 @@ export async function POST(req: NextRequest) {
       telegramLink = 'https://tinyurl.com/6p9un6b5',
       customContext = '',
       clientApiKey = '',
+      hookAngle = 'contrarian',
+      customHookText = '',
     } = await req.json();
 
     const activeApiKey = (clientApiKey && clientApiKey.trim()) || process.env.GEMINI_API_KEY || '';
@@ -27,10 +29,35 @@ export async function POST(req: NextRequest) {
 
     const slideCount = Array.isArray(slides) ? slides.length : 6;
 
+    let hookInstruction = '';
+    if (customHookText && customHookText.trim()) {
+      hookInstruction = `START THE POST EXACTLY WITH THIS OPENING HOOK:\n${customHookText.trim()}\n`;
+    } else {
+      switch (hookAngle) {
+        case 'story':
+          hookInstruction = `START WITH A PERSONAL VULNERABILITY / STRUGGLE HOOK:\n**My first [Topic] took [timeframe/struggle].**\n**[Number] of those [timeframe] were spent just [common mistake/bad approach].**`;
+          break;
+        case 'framework':
+          hookInstruction = `START WITH A CORE PATTERN CHEAT SHEET HOOK:\n**Stop grinding hundreds of random questions/tools.**\n**Mastering [Number] core [Topic] patterns is all you need to crack any interview.**`;
+          break;
+        case 'career':
+          hookInstruction = `START WITH A SENIOR / STAFF ENGINEER MINDSET HOOK:\n**The difference between a Junior and Senior Engineer on [Topic] isn't syntax.**\n**It's understanding architectural trade-offs and knowing what NOT to build.**`;
+          break;
+        case 'actionable':
+          hookInstruction = `START WITH A DIRECT ACTION / SPEED HACK HOOK:\n**You don't need a 40-hour course to understand [Topic].**\n**Here is the 2-minute masterclass breakdown every engineer needs:**`;
+          break;
+        case 'contrarian':
+        default:
+          hookInstruction = `START WITH A CONTRARIAN HARD-TRUTH HOOK:\n**90% of developers fail [Topic] interviews for the same avoidable reason.**\n**They spend weeks memorizing syntax instead of mastering mental models.**`;
+          break;
+      }
+    }
+
     const systemPrompt = `You are an elite LinkedIn copywriter writing for tech creator ${authorName}.
 
 Topic / Carousel: ${topic}
 Total Slides Scanned: ${slideCount}
+Hook Angle: ${hookAngle}
 ${customContext ? `Custom notes: ${customContext}` : ''}
 
 CRITICAL RULES:
@@ -39,15 +66,13 @@ CRITICAL RULES:
 3. Every bullet point must be concise (1-2 lines), highly actionable, and derived from the scanned slide images.
 4. Use markdown **bold** around headings and key phrases (which gets converted to mathematical Unicode bold for LinkedIn).
 
-FOLLOW THIS EXACT TEMPLATE STRUCTURE:
+FOLLOW THIS TEMPLATE STRUCTURE:
 
-**My first [Topic] took [timeframe/struggle].**
+${hookInstruction}
 
-**[Number] of those [timeframe] were spent just [common struggle/mistake].**
+That's one of the biggest problems when you start preparing/building with [Topic]. There are dozens of tools and patterns, and it's easy to spend more time comparing frameworks than actually understanding the underlying models.
 
-That's one of the biggest problems when you start preparing/building with [Topic]. There are dozens of patterns and queries, and it's easy to spend more time memorizing syntax than actually understanding the underlying mental models.
-
-**But [Topic] mastery isn't about memorizing queries.**
+**But [Topic] mastery isn't about memorizing queries or tools.**
 **It's a stack of core patterns working together.**
 
 Here's a practical breakdown of the ${slideCount > 0 ? slideCount : 5} patterns you need to know:
@@ -68,10 +93,10 @@ The mistake isn't lack of practice problems.
 Start simple. Pick one core pattern, master why it exists, and only optimize when scale demands it.
 
 **You don't need to memorize 500 questions.**
-**You need 10 patterns you actually understand.**
+**You need 5 patterns you actually understand.**
 
 📌 **Save this before your next technical interview or architecture review.**
-💬 Which pattern/query do you find the most confusing? Let's discuss below!
+💬 Which pattern/tool do you find the most confusing? Let's discuss below!
 
 **Don't miss daily tech insights & verified job opportunities:**
 **WhatsApp** – ${whatsappLink} **Telegram** – ${telegramLink}

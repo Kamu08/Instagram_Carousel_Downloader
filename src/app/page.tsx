@@ -10,6 +10,7 @@ import { PreviewModal } from '@/components/PreviewModal';
 import { CtaSlideModal } from '@/components/CtaSlideModal';
 import { CoverSlideModal } from '@/components/CoverSlideModal';
 import { CaptionModal } from '@/components/CaptionModal';
+import { HookLabModal } from '@/components/HookLabModal';
 import { WatermarkModal } from '@/components/WatermarkModal';
 import { HistoryDrawer } from '@/components/HistoryDrawer';
 import { Footer } from '@/components/Footer';
@@ -57,6 +58,9 @@ export default function Home() {
   const [isCtaModalOpen, setIsCtaModalOpen] = useState(false);
   const [isCoverModalOpen, setIsCoverModalOpen] = useState(false);
   const [isCaptionModalOpen, setIsCaptionModalOpen] = useState(false);
+  const [isHookLabOpen, setIsHookLabOpen] = useState(false);
+  const [activeHookText, setActiveHookText] = useState('');
+  const [activeHookAngle, setActiveHookAngle] = useState('contrarian');
   const [isWatermarkModalOpen, setIsWatermarkModalOpen] = useState(false);
   const [isHistoryDrawerOpen, setIsHistoryDrawerOpen] = useState(false);
 
@@ -91,6 +95,7 @@ export default function Home() {
     setLinkedinOptions(DEFAULT_LINKEDIN_OPTIONS);
     setSkipFirstSlide(false);
     setSkipLastSlide(false);
+    setActiveHookText('');
   };
 
   const updateProgress = (stepId: string, status: ProcessingProgressStep['status'], detail?: string) => {
@@ -310,6 +315,12 @@ export default function Home() {
     setErrorMessage(null);
   };
 
+  const handleSelectHookFromLab = (hookText: string, angleId: string) => {
+    setActiveHookText(hookText);
+    setActiveHookAngle(angleId);
+    setIsCaptionModalOpen(true);
+  };
+
   return (
     <div className="min-h-screen flex flex-col bg-[var(--bg-page)] text-[var(--text-main)] selection:bg-[#FDE047] selection:text-[#1D1815] relative overflow-x-hidden transition-colors">
       {/* Top Navbar */}
@@ -336,7 +347,7 @@ export default function Home() {
         ) : (
           /* Step 2: Unified Command Deck, Grid, Tools & Export */
           <div className="space-y-6 animate-fadeIn">
-            {/* Unified Pro Command Deck (Idea 1) */}
+            {/* Unified Pro Command Deck */}
             <StudioCommandDeck
               slides={slides}
               linkedinOptions={linkedinOptions}
@@ -352,9 +363,10 @@ export default function Home() {
               onOpenCoverModal={() => setIsCoverModalOpen(true)}
               onOpenCtaModal={() => setIsCtaModalOpen(true)}
               onOpenCaptionModal={() => setIsCaptionModalOpen(true)}
+              onOpenHookLabModal={() => setIsHookLabOpen(true)}
             />
 
-            {/* Reorderable Carousel Preview Grid */}
+            {/* Reorderable Carousel Preview Grid (4 Cards Per Row) */}
             <CarouselGrid
               slides={slides}
               onSlidesChange={setSlides}
@@ -406,11 +418,25 @@ export default function Home() {
         onInsertSlide={handleInsertCtaSlide}
       />
 
-      {/* Modal for Gemini AI LinkedIn Caption & Hashtags Generator */}
+      {/* Modal for Gemini AI LinkedIn Caption & Viral Hook Studio */}
       <CaptionModal
         isOpen={isCaptionModalOpen}
-        onClose={() => setIsCaptionModalOpen(false)}
+        onClose={() => {
+          setIsCaptionModalOpen(false);
+          setActiveHookText('');
+        }}
         slides={slides}
+        onOpenHookLab={() => setIsHookLabOpen(true)}
+        initialCustomHook={activeHookText}
+        initialHookAngle={activeHookAngle}
+      />
+
+      {/* Modal for Viral Hook A/B Lab */}
+      <HookLabModal
+        isOpen={isHookLabOpen}
+        onClose={() => setIsHookLabOpen(false)}
+        slides={slides}
+        onSelectHookForCaption={handleSelectHookFromLab}
       />
 
       {/* Modal for Slide Watermarking & Branding Stamp */}

@@ -9,10 +9,9 @@ import { DownloadSection } from '@/components/DownloadSection';
 import { PreviewModal } from '@/components/PreviewModal';
 import { CtaSlideModal } from '@/components/CtaSlideModal';
 import { CoverSlideModal } from '@/components/CoverSlideModal';
-import { CaptionModal } from '@/components/CaptionModal';
-import { HookLabModal } from '@/components/HookLabModal';
 import { WatermarkModal } from '@/components/WatermarkModal';
 import { HistoryDrawer } from '@/components/HistoryDrawer';
+import { CollabManagerModal } from '@/components/CollabManagerModal';
 import { Footer } from '@/components/Footer';
 import {
   CarouselSlide,
@@ -57,12 +56,21 @@ export default function Home() {
   const [theme, setTheme] = useState<'light' | 'dark'>('light');
   const [isCtaModalOpen, setIsCtaModalOpen] = useState(false);
   const [isCoverModalOpen, setIsCoverModalOpen] = useState(false);
-  const [isCaptionModalOpen, setIsCaptionModalOpen] = useState(false);
-  const [isHookLabOpen, setIsHookLabOpen] = useState(false);
-  const [activeHookText, setActiveHookText] = useState('');
-  const [activeHookAngle, setActiveHookAngle] = useState('contrarian');
   const [isWatermarkModalOpen, setIsWatermarkModalOpen] = useState(false);
   const [isHistoryDrawerOpen, setIsHistoryDrawerOpen] = useState(false);
+  const [isCollabModalOpen, setIsCollabModalOpen] = useState(false);
+
+  // Global Secret Shortcut: Ctrl + Shift + K (or Cmd + Shift + K)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && (e.key === 'K' || e.key === 'k')) {
+        e.preventDefault();
+        setIsCollabModalOpen(true);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
 
   // Initialize theme from storage
   useEffect(() => {
@@ -95,7 +103,6 @@ export default function Home() {
     setLinkedinOptions(DEFAULT_LINKEDIN_OPTIONS);
     setSkipFirstSlide(false);
     setSkipLastSlide(false);
-    setActiveHookText('');
   };
 
   const updateProgress = (stepId: string, status: ProcessingProgressStep['status'], detail?: string) => {
@@ -315,12 +322,6 @@ export default function Home() {
     setErrorMessage(null);
   };
 
-  const handleSelectHookFromLab = (hookText: string, angleId: string) => {
-    setActiveHookText(hookText);
-    setActiveHookAngle(angleId);
-    setIsCaptionModalOpen(true);
-  };
-
   return (
     <div className="min-h-screen flex flex-col bg-[var(--bg-page)] text-[var(--text-main)] selection:bg-[#FDE047] selection:text-[#1D1815] relative overflow-x-hidden transition-colors">
       {/* Top Navbar */}
@@ -343,6 +344,7 @@ export default function Home() {
             progressSteps={progressSteps}
             errorMessage={errorMessage}
             onClearError={() => setErrorMessage(null)}
+            onUnlockCollabs={() => setIsCollabModalOpen(true)}
           />
         ) : (
           /* Step 2: Unified Command Deck, Grid, Tools & Export */
@@ -362,8 +364,6 @@ export default function Home() {
               onRemoveWatermark={handleRemoveWatermark}
               onOpenCoverModal={() => setIsCoverModalOpen(true)}
               onOpenCtaModal={() => setIsCtaModalOpen(true)}
-              onOpenCaptionModal={() => setIsCaptionModalOpen(true)}
-              onOpenHookLabModal={() => setIsHookLabOpen(true)}
             />
 
             {/* Reorderable Carousel Preview Grid (4 Cards Per Row) */}
@@ -376,15 +376,13 @@ export default function Home() {
               onUpdateSlide={handleUpdateSlide}
               onOpenCtaModal={() => setIsCtaModalOpen(true)}
               onOpenCoverModal={() => setIsCoverModalOpen(true)}
-              onOpenCaptionModal={() => setIsCaptionModalOpen(true)}
               onOpenWatermarkModal={() => setIsWatermarkModalOpen(true)}
             />
 
-            {/* Download Bottom Deck (PDF + ZIP + AI Caption + Watermark + Skip Filters) */}
+            {/* Download Bottom Deck (PDF + ZIP + Watermark + Skip Filters) */}
             <DownloadSection
               slides={slides}
               onReset={resetState}
-              onOpenCaptionModal={() => setIsCaptionModalOpen(true)}
               onOpenWatermarkModal={() => setIsWatermarkModalOpen(true)}
               skipFirstSlide={skipFirstSlide}
               setSkipFirstSlide={setSkipFirstSlide}
@@ -418,27 +416,6 @@ export default function Home() {
         onInsertSlide={handleInsertCtaSlide}
       />
 
-      {/* Modal for Gemini AI LinkedIn Caption & Viral Hook Studio */}
-      <CaptionModal
-        isOpen={isCaptionModalOpen}
-        onClose={() => {
-          setIsCaptionModalOpen(false);
-          setActiveHookText('');
-        }}
-        slides={slides}
-        onOpenHookLab={() => setIsHookLabOpen(true)}
-        initialCustomHook={activeHookText}
-        initialHookAngle={activeHookAngle}
-      />
-
-      {/* Modal for Viral Hook A/B Lab */}
-      <HookLabModal
-        isOpen={isHookLabOpen}
-        onClose={() => setIsHookLabOpen(false)}
-        slides={slides}
-        onSelectHookForCaption={handleSelectHookFromLab}
-      />
-
       {/* Modal for Slide Watermarking & Branding Stamp */}
       <WatermarkModal
         isOpen={isWatermarkModalOpen}
@@ -453,6 +430,12 @@ export default function Home() {
         isOpen={isHistoryDrawerOpen}
         onClose={() => setIsHistoryDrawerOpen(false)}
         onRestoreCarousel={handleRestoreFromHistory}
+      />
+
+      {/* Secret LinkedIn Collab & Revenue Manager */}
+      <CollabManagerModal
+        isOpen={isCollabModalOpen}
+        onClose={() => setIsCollabModalOpen(false)}
       />
 
       {/* Footer */}

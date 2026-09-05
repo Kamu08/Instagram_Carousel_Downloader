@@ -14,7 +14,8 @@ import {
   Flame,
   MousePointerClick,
 } from 'lucide-react';
-import { ProcessingProgressStep } from '@/lib/types';
+import { ProcessingProgressStep, PlatformType } from '@/lib/types';
+import { detectPlatform } from '@/lib/platform-detector';
 
 interface UrlInputFormProps {
   onSubmitUrl: (url: string) => Promise<void>;
@@ -24,7 +25,62 @@ interface UrlInputFormProps {
   progressSteps: ProcessingProgressStep[];
   errorMessage: string | null;
   onClearError: () => void;
+  onUnlockCollabs?: () => void;
 }
+
+interface PlatformConfig {
+  id: PlatformType;
+  name: string;
+  badge: string;
+  color: string;
+  activeBg: string;
+  placeholder: string;
+  example: string;
+  tag: string;
+}
+
+const PLATFORMS: PlatformConfig[] = [
+  {
+    id: 'instagram',
+    name: 'Instagram',
+    badge: '📸',
+    color: '#FDE047',
+    activeBg: 'bg-[#FDE047] text-[#1D1815]',
+    placeholder: 'https://www.instagram.com/p/DanrSJfkggJ/',
+    example: 'instagram.com/p/...',
+    tag: 'Carousels & Multi-Slides',
+  },
+  {
+    id: 'linkedin',
+    name: 'LinkedIn',
+    badge: '💼',
+    color: '#93C5FD',
+    activeBg: 'bg-[#93C5FD] text-[#1D1815]',
+    placeholder: 'https://www.linkedin.com/posts/username_topic-activity-1234567890/',
+    example: 'linkedin.com/posts/...',
+    tag: 'Document Carousels & PDF Slides',
+  },
+  {
+    id: 'twitter',
+    name: 'Twitter / X',
+    badge: '🐦',
+    color: '#A7F3D0',
+    activeBg: 'bg-[#A7F3D0] text-[#1D1815]',
+    placeholder: 'https://x.com/username/status/1234567890123456789',
+    example: 'x.com/.../status/...',
+    tag: 'Multi-Image Posts & Thread Images',
+  },
+  {
+    id: 'threads',
+    name: 'Threads',
+    badge: '🧵',
+    color: '#F5A3B3',
+    activeBg: 'bg-[#F5A3B3] text-[#1D1815]',
+    placeholder: 'https://www.threads.net/@username/post/C6abcd12345',
+    example: 'threads.net/@.../post/...',
+    tag: 'Photo Carousels & Galleries',
+  },
+];
 
 export function UrlInputForm({
   onSubmitUrl,
@@ -34,25 +90,57 @@ export function UrlInputForm({
   progressSteps,
   errorMessage,
   onClearError,
+  onUnlockCollabs,
 }: UrlInputFormProps) {
+  const [selectedPlatform, setSelectedPlatform] = useState<PlatformType>('instagram');
   const [url, setUrl] = useState('');
   const [inputError, setInputError] = useState<string | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const inputElementRef = useRef<HTMLInputElement>(null);
+
+  const activeConfig = PLATFORMS.find((p) => p.id === selectedPlatform) || PLATFORMS[0];
+
+  const handleUrlChange = (value: string) => {
+    setUrl(value);
+    if (inputError) setInputError(null);
+    if (errorMessage) onClearError();
+
+    // Check for Secret PIN Trigger
+    if (value.trim() === '123321') {
+      if (onUnlockCollabs) {
+        onUnlockCollabs();
+        setUrl('');
+        return;
+      }
+    }
+
+    // Auto-detect platform if pasted
+    const detected = detectPlatform(value);
+    if (detected && detected !== selectedPlatform) {
+      setSelectedPlatform(detected);
+    }
+  };
 
   const validateUrl = (value: string): boolean => {
-    if (!value.trim()) {
-      setInputError('Please paste an Instagram post URL.');
+    const trimmed = value.trim();
+    if (!trimmed) {
+      setInputError('Please paste a post URL from Instagram, LinkedIn, Twitter/X, or Threads.');
       return false;
     }
 
-    const isValid = /(?:instagram\.com\/(?:p|reel|tv|share\/p)\/|instagr\.am\/p\/)[A-Za-z0-9_-]+/i.test(
-      value.trim()
-    );
+    if (trimmed === '123321') {
+      if (onUnlockCollabs) {
+        onUnlockCollabs();
+        setUrl('');
+        return false;
+      }
+    }
 
-    if (!isValid) {
+    const detected = detectPlatform(trimmed);
+    if (!detected) {
       setInputError(
-        'Please enter a valid Instagram URL (e.g. https://www.instagram.com/p/DanrSJfkggJ/).'
+        'Please enter a supported URL from Instagram, LinkedIn, Twitter/X, or Threads (e.g. instagram.com/p/..., linkedin.com/posts/..., x.com/.../status/..., threads.net/@.../post/...)'
       );
       return false;
     }
@@ -65,12 +153,18 @@ export function UrlInputForm({
     try {
       const text = await navigator.clipboard.readText();
       if (text) {
-        setUrl(text);
-        if (inputError) setInputError(null);
-        if (errorMessage) onClearError();
+        handleUrlChange(text);
       }
     } catch {
       // ignore
+    }
+  };
+
+  const handlePlatformSelect = (plat: PlatformType) => {
+    setSelectedPlatform(plat);
+    setInputError(null);
+    if (inputElementRef.current) {
+      inputElementRef.current.focus();
     }
   };
 
@@ -113,31 +207,31 @@ export function UrlInputForm({
   return (
     <div className="w-full max-w-4xl mx-auto">
       {/* Hero Header */}
-      <div className="text-center mb-10 sm:mb-12 relative">
+      <div className="text-center mb-8 sm:mb-10 relative">
         {/* Floating doodle badge */}
         <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-[#F5A3B3] border-2 border-[#1D1815] shadow-[2.5px_2.5px_0px_#1D1815] text-[#1D1815] text-xs font-black uppercase tracking-wider mb-5 rotate-[-1deg]">
           <Sparkles className="w-4 h-4 text-[#1D1815]" />
-          <span>INSTAGRAM → LINKEDIN CAROUSEL STUDIO</span>
+          <span>MULTI-PLATFORM SOCIAL → LINKEDIN CAROUSEL STUDIO</span>
           <span className="font-hand text-base lowercase font-bold text-[#1D1815]">• 100% automated</span>
         </div>
 
         {/* Dynamic Title with Marker Highlights */}
         <h1 className="font-display text-4xl sm:text-5xl lg:text-6xl font-black text-[var(--text-main)] tracking-tight leading-[1.15]">
-          Turn Instagram Carousels into{' '}
-          <span className="marker-yellow">LinkedIn-Ready PNGs</span>
+          Turn Social Posts &amp; Carousels into{' '}
+          <span className="marker-yellow">LinkedIn Master PDFs</span>
         </h1>
 
         <p className="mt-4 font-marker text-xl sm:text-2xl text-[var(--text-muted)] max-w-2xl mx-auto leading-relaxed">
-          Paste any carousel URL to extract all slides in seconds. Converts HEIC & WebP to master PNGs, ready for LinkedIn carousel document posts! 🚀
+          Download carousels and multi-image posts from Instagram, LinkedIn, Twitter/X, and Threads in lossless HD quality! 🚀
         </p>
 
         {/* Feature Sketch Badges */}
         <div className="mt-6 flex flex-wrap items-center justify-center gap-3 text-xs font-black">
           {[
-            { text: '⚡ All Slides Auto-Extracted', bg: 'bg-[#FDE047]' },
-            { text: '🎨 HEIC / JPEG → Master PNG', bg: 'bg-[#93C5FD]' },
-            { text: '📐 4:5 Portrait (1080×1350) Ready', bg: 'bg-[#A7F3D0]' },
-            { text: '📦 Sequential ZIP Export', bg: 'bg-[#FDBA74]' },
+            { text: '📸 Instagram Carousels', bg: 'bg-[#FDE047]' },
+            { text: '💼 LinkedIn Document Posts', bg: 'bg-[#93C5FD]' },
+            { text: '🐦 Twitter / X Multi-Photos', bg: 'bg-[#A7F3D0]' },
+            { text: '🧵 Threads Galleries', bg: 'bg-[#F5A3B3]' },
           ].map((item, i) => (
             <span
               key={i}
@@ -154,15 +248,51 @@ export function UrlInputForm({
         {/* Top Paper Tape */}
         <div className="tape-top tape-pink" />
 
+        {/* 4 Platform Selector Buttons */}
+        <div className="mb-6">
+          <label className="block font-display text-xs font-black uppercase tracking-wider text-[var(--text-muted)] mb-2">
+            Select Platform:
+          </label>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+            {PLATFORMS.map((plat) => {
+              const isSelected = selectedPlatform === plat.id;
+              return (
+                <button
+                  key={plat.id}
+                  type="button"
+                  onClick={() => handlePlatformSelect(plat.id)}
+                  className={`p-3 rounded-2xl border-2 border-[var(--border-ink)] text-left transition-all cursor-pointer flex items-center justify-between group ${
+                    isSelected
+                      ? `${plat.activeBg} shadow-[3px_3px_0px_var(--shadow-ink)] -translate-y-0.5`
+                      : 'bg-[var(--bg-card)] text-[var(--text-main)] hover:bg-[var(--bg-page)] shadow-[1.5px_1.5px_0px_var(--shadow-ink)]'
+                  }`}
+                >
+                  <div className="flex items-center gap-2">
+                    <span className="text-xl">{plat.badge}</span>
+                    <div>
+                      <span className="font-display font-black text-xs sm:text-sm block">
+                        {plat.name}
+                      </span>
+                      <span className="font-hand text-[11px] font-bold opacity-80 block -mt-0.5">
+                        {plat.example}
+                      </span>
+                    </div>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
         <form onSubmit={handleSubmit} className="space-y-6">
           <div>
             <div className="flex items-center justify-between mb-2.5">
               <label
-                htmlFor="instagram-url"
+                htmlFor="social-post-url"
                 className="font-display text-base font-extrabold text-[var(--text-main)] flex items-center gap-2"
               >
-                <span>Paste Instagram Carousel URL</span>
-                <span className="font-hand text-lg font-bold text-[#F43F5E]">(public post link)</span>
+                <span>Paste {activeConfig.name} Post Link</span>
+                <span className="font-hand text-lg font-bold text-[#F43F5E]">({activeConfig.tag})</span>
               </label>
 
               {/* 1-Click Paste Button */}
@@ -181,16 +311,13 @@ export function UrlInputForm({
                 <Link2 className="w-6 h-6 stroke-[2.5]" />
               </div>
               <input
-                id="instagram-url"
+                ref={inputElementRef}
+                id="social-post-url"
                 type="url"
                 disabled={isLoading}
                 value={url}
-                onChange={(e) => {
-                  setUrl(e.target.value);
-                  if (inputError) setInputError(null);
-                  if (errorMessage) onClearError();
-                }}
-                placeholder="https://www.instagram.com/p/DanrSJfkggJ/"
+                onChange={(e) => handleUrlChange(e.target.value)}
+                placeholder={activeConfig.placeholder}
                 className={`w-full pl-14 sm:pl-16 pr-12 py-4 sm:py-4.5 bg-[var(--input-bg)] border-2 border-[var(--border-ink)] rounded-2xl text-[var(--text-main)] placeholder-[var(--text-muted)] font-mono text-sm sm:text-base font-bold shadow-[3px_3px_0px_var(--shadow-ink)] focus:outline-none transition-all ${
                   inputError || errorMessage
                     ? 'border-[#F43F5E] bg-red-50 dark:bg-red-950/30'
@@ -225,16 +352,16 @@ export function UrlInputForm({
           <button
             type="submit"
             disabled={isLoading}
-            className="w-full py-4 sm:py-5 px-8 bg-[#FDE047] hover:bg-[#FACC15] sketch-btn text-[#1D1815] font-display font-black text-lg sm:text-xl flex items-center justify-center gap-3 disabled:opacity-50 disabled:cursor-not-allowed group uppercase tracking-wider"
+            className="w-full py-4 sm:py-5 px-8 bg-[#FDE047] hover:bg-[#FACC15] sketch-btn text-[#1D1815] font-display font-black text-lg sm:text-xl flex items-center justify-center gap-3 disabled:opacity-50 disabled:cursor-not-allowed group uppercase tracking-wider cursor-pointer"
           >
             {isLoading ? (
               <>
                 <Loader2 className="w-6 h-6 animate-spin text-[#1D1815]" />
-                <span>Extracting All Carousel Slides...</span>
+                <span>Extracting &amp; Processing Slides...</span>
               </>
             ) : (
               <>
-                <span>Download Carousel</span>
+                <span>Download {activeConfig.name} Post</span>
                 <ArrowRight className="w-6 h-6 stroke-[3] group-hover:translate-x-2 transition-transform" />
               </>
             )}
@@ -301,7 +428,7 @@ export function UrlInputForm({
                 <UploadCloud className="w-6 h-6 stroke-[2.5]" />
               </div>
               <p className="font-display text-sm sm:text-base font-extrabold text-[var(--text-main)]">
-                <span className="marker-pink">Click to upload images</span> or drag & drop HEIC / WebP / JPEG files
+                <span className="marker-pink">Click to upload images</span> or drag &amp; drop HEIC / WebP / JPEG files
               </p>
               <p className="font-hand text-lg text-[var(--text-muted)] font-bold">
                 offline manual fallback • converts all files into ordered PNG slides!
@@ -322,7 +449,7 @@ export function UrlInputForm({
             </div>
             <div>
               <h3 className="font-display font-extrabold text-[var(--text-main)] text-lg">
-                Extracting & Processing Carousel
+                Extracting &amp; Processing {activeConfig.name} Post
               </h3>
               <p className="font-hand text-base text-[var(--text-muted)] font-bold">
                 Traversing all slides, decoding formats, converting to PNG master files

@@ -52,9 +52,9 @@ const inter = Inter({
 });
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://instagram-carousel-downloader.vercel.app';
-const SITE_TITLE = 'Instagram Carousel Downloader & LinkedIn PDF Studio | By Kamal Sharma';
+const SITE_TITLE = 'Multi-Platform Post & Carousel Downloader (Instagram, LinkedIn, Twitter/X, Threads) | By Kamal Sharma';
 const SITE_DESC =
-  'Download Instagram carousel slides in HD PNG, convert into 4:5 LinkedIn PDF documents, stamp custom watermarks, and generate viral AI post captions with Gemini Vision. Created by Kamal Sharma.';
+  'Download carousels and multi-image posts from Instagram, LinkedIn, Twitter/X, and Threads in HD PNG, convert into 4:5 LinkedIn PDF documents, and stamp custom branding watermarks. Created by Kamal Sharma.';
 
 export const viewport: Viewport = {
   themeColor: [
@@ -70,23 +70,23 @@ export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
   title: {
     default: SITE_TITLE,
-    template: '%s | Instagram Carousel Downloader & LinkedIn Studio',
+    template: '%s | Multi-Platform Carousel & LinkedIn Studio',
   },
   description: SITE_DESC,
   keywords: [
     'Instagram Carousel Downloader',
+    'LinkedIn Carousel Downloader',
+    'Twitter Post Downloader',
+    'Threads Carousel Downloader',
     'Instagram to LinkedIn PDF',
     'Download Instagram Carousel',
-    'Instagram Carousel to PDF',
     'LinkedIn Carousel PDF Generator',
-    'Download Instagram Slides HD',
+    'Twitter Thread Images Downloader',
+    'Threads Image Downloader',
+    'Download Slides HD PNG',
     'LinkedIn Document Carousel Maker',
-    'Instagram Slide Downloader',
     'Kamal Sharma',
     'Carousel Watermark Maker',
-    'LinkedIn Caption Generator AI',
-    'Gemini AI LinkedIn Writer',
-    'Instagram Post Downloader Free',
     'Social Media Carousel Converter',
   ],
   authors: [{ name: 'Kamal Sharma', url: 'https://linkedin.com' }],
@@ -154,8 +154,7 @@ const jsonLd = {
         'Automatic Conversion to 4:5 Portrait LinkedIn PDF Document',
         'Lossless PNG ZIP batch export with sequential naming',
         'Custom Slide Watermark & Branding Studio with 6 positions and 8 badge styles',
-        'Gemini Multimodal AI Post Caption & 500+ Word Masterclass Writer',
-        'Viral Hook A/B Testing Lab with 5 strategic angles',
+        'Custom Pop Sticker Cover & Outro CTA Slide Generator',
         'Interactive Drag-and-Drop Slide Reordering & Single Slide Export',
       ],
     },
@@ -181,10 +180,10 @@ const jsonLd = {
         },
         {
           '@type': 'Question',
-          name: 'Can I add watermarks and generate AI LinkedIn captions?',
+          name: 'Can I add custom watermarks and cover slides?',
           acceptedAnswer: {
             '@type': 'Answer',
-            text: 'Yes! You can add non-destructive branding stamps in 6 positions with 8 styles, and use the Gemini 3.6 Flash AI Studio to visually scan your slides and generate viral LinkedIn captions and hooks.',
+            text: 'Yes! You can add non-destructive branding stamps in 6 positions with 8 styles, and generate custom pop sticker cover and outro CTA slides directly in the studio.',
           },
         },
       ],
@@ -200,6 +199,7 @@ export default function RootLayout({
   return (
     <html
       lang="en"
+      suppressHydrationWarning
       className={`${titanOne.variable} ${paytoneOne.variable} ${spaceGrotesk.variable} ${caveat.variable} ${patrickHand.variable} ${jetbrainsMono.variable} ${inter.variable} h-full antialiased`}
     >
       <head>
@@ -215,7 +215,9 @@ export default function RootLayout({
           dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
         />
       </head>
-      <body className="min-h-full flex flex-col font-sans">{children}</body>
+      <body className="min-h-full flex flex-col font-sans" suppressHydrationWarning>
+        {children}
+      </body>
     </html>
   );
 }

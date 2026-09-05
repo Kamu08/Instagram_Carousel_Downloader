@@ -28,9 +28,12 @@ export interface LinkedInOptions {
   backgroundColorHex?: string;
 }
 
+export type PlatformType = 'instagram' | 'linkedin' | 'twitter' | 'threads';
+
 export interface InstagramFetchResult {
   success: boolean;
   shortcode: string;
+  platform?: PlatformType;
   title?: string;
   author?: string;
   authorAvatar?: string;
@@ -41,9 +44,14 @@ export interface InstagramFetchResult {
   errorType?: 'INVALID_URL' | 'PRIVATE_POST' | 'POST_NOT_FOUND' | 'NO_MEDIA' | 'RATE_LIMITED' | 'NETWORK_ERROR' | 'UNKNOWN';
 }
 
+export type MultiPlatformFetchResult = InstagramFetchResult;
+
 export interface ProcessingProgressStep {
   id: string;
   label: string;
   status: 'pending' | 'in-progress' | 'completed' | 'error';
   detail?: string;
 }
+
+export * from './collab-types';
+

@@ -22,7 +22,6 @@ import { generateLinkedInPdf } from '@/lib/pdf-generator';
 interface DownloadSectionProps {
   slides: CarouselSlide[];
   onReset: () => void;
-  onOpenCaptionModal: () => void;
   onOpenWatermarkModal: () => void;
   skipFirstSlide: boolean;
   setSkipFirstSlide: (val: boolean) => void;
@@ -33,7 +32,6 @@ interface DownloadSectionProps {
 export function DownloadSection({
   slides,
   onReset,
-  onOpenCaptionModal,
   onOpenWatermarkModal,
   skipFirstSlide,
   setSkipFirstSlide,
@@ -228,16 +226,6 @@ export function DownloadSection({
           >
             <Stamp className="w-4 h-4 stroke-[2.5]" />
             <span>Watermark</span>
-          </button>
-
-          {/* AI Caption Button */}
-          <button
-            type="button"
-            onClick={onOpenCaptionModal}
-            className="px-4 py-3.5 rounded-2xl bg-[#A7F3D0] hover:bg-[#6EE7B7] border-2 border-[#1D1815] shadow-[2px_2px_0px_#1D1815] hover:shadow-[1px_1px_0px_#1D1815] hover:translate-x-[1px] hover:translate-y-[1px] text-[#1D1815] font-display font-black text-xs sm:text-sm transition-all flex items-center justify-center gap-2 cursor-pointer"
-          >
-            <Sparkles className="w-4 h-4 stroke-[2.5]" />
-            <span>AI Caption</span>
           </button>
 
           {/* Download ZIP */}

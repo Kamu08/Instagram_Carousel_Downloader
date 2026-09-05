@@ -39,7 +39,6 @@ interface CarouselGridProps {
   onUpdateSlide: (updated: CarouselSlide) => void;
   onOpenCtaModal: () => void;
   onOpenCoverModal: () => void;
-  onOpenCaptionModal: () => void;
   onOpenWatermarkModal: () => void;
 }
 
@@ -52,7 +51,6 @@ export function CarouselGrid({
   onUpdateSlide,
   onOpenCtaModal,
   onOpenCoverModal,
-  onOpenCaptionModal,
   onOpenWatermarkModal,
 }: CarouselGridProps) {
   const [activeId, setActiveId] = useState<string | null>(null);
@@ -132,16 +130,6 @@ export function CarouselGrid({
           >
             <Stamp className="w-4 h-4 stroke-[2.5]" />
             <span>Watermark</span>
-          </button>
-
-          {/* AI Caption Generator Button */}
-          <button
-            type="button"
-            onClick={onOpenCaptionModal}
-            className="px-3.5 py-2.5 rounded-xl bg-[#A7F3D0] hover:bg-[#6EE7B7] border-2 border-[#1D1815] shadow-[2px_2px_0px_#1D1815] hover:shadow-[1px_1px_0px_#1D1815] hover:translate-x-[1px] hover:translate-y-[1px] font-display font-black text-xs text-[#1D1815] flex items-center gap-1.5 cursor-pointer transition-all active:translate-x-[2px] active:translate-y-[2px]"
-          >
-            <Sparkles className="w-4 h-4 stroke-[2.5]" />
-            <span>AI Caption</span>
           </button>
 
           {/* Generate Custom Cover Slide */}

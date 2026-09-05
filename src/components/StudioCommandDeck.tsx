@@ -44,11 +44,9 @@ interface StudioCommandDeckProps {
   onRemoveWatermark: () => void;
   onOpenCoverModal: () => void;
   onOpenCtaModal: () => void;
-  onOpenCaptionModal: () => void;
-  onOpenHookLabModal: () => void;
 }
 
-type TabType = 'dimensions' | 'watermark' | 'filters' | 'ai-tools' | null;
+type TabType = 'dimensions' | 'watermark' | 'filters' | 'creative-tools' | null;
 
 export function StudioCommandDeck({
   slides,
@@ -64,8 +62,6 @@ export function StudioCommandDeck({
   onRemoveWatermark,
   onOpenCoverModal,
   onOpenCtaModal,
-  onOpenCaptionModal,
-  onOpenHookLabModal,
 }: StudioCommandDeckProps) {
   const [activeTab, setActiveTab] = useState<TabType>(null);
   const [customW, setCustomW] = useState(linkedinOptions.customWidth || 1080);
@@ -124,16 +120,6 @@ export function StudioCommandDeck({
               </p>
             </div>
           </div>
-
-          {/* Quick AI Caption Action on Mobile */}
-          <button
-            type="button"
-            onClick={onOpenCaptionModal}
-            className="lg:hidden p-2 rounded-xl bg-[#A7F3D0] border-2 border-[#1D1815] shadow-[2px_2px_0px_#1D1815] text-[#1D1815] cursor-pointer"
-            title="AI Caption Generator"
-          >
-            <Sparkles className="w-4 h-4 stroke-[2.5]" />
-          </button>
         </div>
 
         {/* Center / Right: Segmented Studio Tabs */}
@@ -201,33 +187,23 @@ export function StudioCommandDeck({
             )}
           </button>
 
-          {/* Tab 4: AI & Creative Tools */}
+          {/* Tab 4: Creative Tools (Cover & CTA Slides) */}
           <button
             type="button"
-            onClick={() => handleTabClick('ai-tools')}
+            onClick={() => handleTabClick('creative-tools')}
             className={`px-3.5 py-2 rounded-xl border-2 border-[var(--border-ink)] font-display font-black text-xs flex items-center gap-1.5 transition-all cursor-pointer ${
-              activeTab === 'ai-tools'
+              activeTab === 'creative-tools'
                 ? 'bg-[#F5A3B3] text-[#1D1815] shadow-[2px_2px_0px_var(--shadow-ink)] -translate-y-0.5'
                 : 'bg-[var(--bg-card)] text-[var(--text-main)] hover:bg-[var(--bg-page)] shadow-[1.5px_1.5px_0px_var(--shadow-ink)]'
             }`}
           >
-            <Sparkles className="w-3.5 h-3.5 stroke-[2.5]" />
-            <span>AI Studio</span>
-            {activeTab === 'ai-tools' ? (
+            <Wand2 className="w-3.5 h-3.5 stroke-[2.5]" />
+            <span>Slide Studio</span>
+            {activeTab === 'creative-tools' ? (
               <ChevronUp className="w-3 h-3 stroke-[3]" />
             ) : (
               <ChevronDown className="w-3 h-3 stroke-[3]" />
             )}
-          </button>
-
-          {/* Direct 1-Click AI Caption Button (Desktop) */}
-          <button
-            type="button"
-            onClick={onOpenCaptionModal}
-            className="hidden lg:flex px-4 py-2 rounded-xl bg-[#A7F3D0] hover:bg-[#6EE7B7] border-2 border-[#1D1815] shadow-[2px_2px_0px_#1D1815] font-display font-black text-xs text-[#1D1815] items-center gap-1.5 cursor-pointer hover:translate-x-[1px] hover:translate-y-[1px] transition-all"
-          >
-            <Sparkles className="w-3.5 h-3.5 stroke-[2.5]" />
-            <span>✨ AI Caption</span>
           </button>
         </div>
       </div>
@@ -448,24 +424,9 @@ export function StudioCommandDeck({
             </div>
           )}
 
-          {/* TAB 4: AI & CREATIVE TOOLS (With Viral Hook A/B Lab!) */}
-          {activeTab === 'ai-tools' && (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-              {/* Viral Hook A/B Lab */}
-              <button
-                type="button"
-                onClick={onOpenHookLabModal}
-                className="p-4 rounded-2xl bg-[#F5A3B3] hover:bg-[#FB7185] border-2 border-[#1D1815] shadow-[3px_3px_0px_#1D1815] text-[#1D1815] text-left transition-all cursor-pointer flex flex-col justify-between"
-              >
-                <div className="flex items-center gap-2 font-display font-black text-sm">
-                  <Target className="w-4 h-4 stroke-[2.5]" />
-                  <span>Viral Hook A/B Lab</span>
-                </div>
-                <span className="font-hand text-xs font-bold mt-1 opacity-90">
-                  5 strategic scroll-stopping hooks
-                </span>
-              </button>
-
+          {/* TAB 4: CREATIVE TOOLS (Cover & CTA Slide Generators) */}
+          {activeTab === 'creative-tools' && (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               {/* Cover Slide Generator */}
               <button
                 type="button"
@@ -493,21 +454,6 @@ export function StudioCommandDeck({
                 </div>
                 <span className="font-hand text-xs font-bold mt-1 opacity-90">
                   Follow, Save &amp; Share ending slide
-                </span>
-              </button>
-
-              {/* Gemini AI Caption */}
-              <button
-                type="button"
-                onClick={onOpenCaptionModal}
-                className="p-4 rounded-2xl bg-[#A7F3D0] hover:bg-[#6EE7B7] border-2 border-[#1D1815] shadow-[3px_3px_0px_#1D1815] text-[#1D1815] text-left transition-all cursor-pointer flex flex-col justify-between"
-              >
-                <div className="flex items-center gap-2 font-display font-black text-sm">
-                  <Sparkles className="w-4 h-4 stroke-[2.5]" />
-                  <span>Gemini AI Caption</span>
-                </div>
-                <span className="font-hand text-xs font-bold mt-1 opacity-90">
-                  Vision scanned LinkedIn post
                 </span>
               </button>
             </div>

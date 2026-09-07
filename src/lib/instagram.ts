@@ -13,14 +13,14 @@ export function extractShortcode(inputUrl: string): string | null {
   if (!inputUrl || typeof inputUrl !== 'string') return null;
 
   const cleanUrl = inputUrl.trim();
-  const pattern = /(?:instagram\.com\/(?:p|reel|tv|share\/p)\/|instagr\.am\/p\/)([A-Za-z0-9_-]+)/i;
+  const pattern = /(?:instagram\.com\/(?:p|reel|reels|tv|share\/p|share\/reel)\/|instagr\.am\/(?:p|reel)\/)([A-Za-z0-9_-]+)/i;
   const match = cleanUrl.match(pattern);
 
   if (match && match[1]) {
     return match[1];
   }
 
-  if (/^[A-Za-z0-9_-]{9,15}$/.test(cleanUrl)) {
+  if (/^[A-Za-z0-9_-]{9,20}$/.test(cleanUrl)) {
     return cleanUrl;
   }
 
@@ -42,7 +42,7 @@ async function fetchWithTimeout(
     const res = await fetch(url, {
       headers: {
         'User-Agent': CRAWLER_USER_AGENTS[0],
-        Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+        Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,application/json,*/*;q=0.8',
         'Accept-Language': 'en-US,en;q=0.9',
         ...headers,
       },
@@ -66,13 +66,16 @@ function unescapeInstagramString(str: string): string {
     .replace(/\\u0026/g, '&')
     .replace(/&amp;/g, '&')
     .replace(/\\u00253A/g, ':')
-    .replace(/\\u00252F/g, '/');
+    .replace(/\\u00252F/g, '/')
+    .replace(/\\"/g, '"');
 }
 
 /**
- * Extract original uncropped image URLs from HTML
+ * Extract original uncropped image URLs from HTML or JSON
  */
 function extractCarouselUrlsFromHtml(html: string): string[] {
+  if (!html) return [];
+
   // Strategy A: Parse carousel_media JSON array directly
   const carouselIdx = html.indexOf('"carousel_media":[');
   if (carouselIdx !== -1) {
@@ -98,7 +101,6 @@ function extractCarouselUrlsFromHtml(html: string): string[] {
 
         for (const item of items) {
           const candidates = item.image_versions2?.candidates || [];
-          // Filter out square crops (e.g. c0.240..., stp=c)
           const uncropped = candidates.filter(
             (c: any) =>
               c.url &&
@@ -108,7 +110,6 @@ function extractCarouselUrlsFromHtml(html: string): string[] {
               !c.url.includes('s100x100')
           );
 
-          // Sort by width descending
           uncropped.sort((a: any, b: any) => (b.width || 0) - (a.width || 0));
 
           const bestUrl = uncropped[0]?.url || item.display_uri || candidates[0]?.url;
@@ -126,7 +127,29 @@ function extractCarouselUrlsFromHtml(html: string): string[] {
     }
   }
 
-  // Strategy B: General uncropped candidate scan
+  // Strategy B: Parse edge_sidecar_to_children GraphQL structure
+  const sidecarIdx = html.indexOf('"edge_sidecar_to_children":');
+  if (sidecarIdx !== -1) {
+    try {
+      const match = html.match(/"edge_sidecar_to_children"\s*:\s*(\{"edges":\[.*?\]\})/s);
+      if (match && match[1]) {
+        const sidecarObj = JSON.parse(match[1]);
+        const edges = sidecarObj.edges || [];
+        const urls: string[] = [];
+        for (const edge of edges) {
+          const node = edge.node;
+          if (node?.display_url) {
+            urls.push(unescapeInstagramString(node.display_url));
+          }
+        }
+        if (urls.length > 0) return urls;
+      }
+    } catch (e) {
+      console.warn('Failed to parse edge_sidecar_to_children:', e);
+    }
+  }
+
+  // Strategy C: General uncropped candidate scan
   const allImageUrls = [
     ...new Set(
       [...html.matchAll(/https:\/\/[^"'<>\s]+?\.(?:jpg|jpeg|png|webp|heic)[^"'<>\s]*/gi)].map((m) =>
@@ -161,7 +184,7 @@ function extractCarouselUrlsFromHtml(html: string): string[] {
 }
 
 /**
- * Main Fetch & Process pipeline
+ * Main Fetch & Process pipeline with multi-tiered fallback
  */
 export async function fetchInstagramCarousel(url: string): Promise<InstagramFetchResult> {
   const shortcode = extractShortcode(url);
@@ -179,36 +202,79 @@ export async function fetchInstagramCarousel(url: string): Promise<InstagramFetc
 
   try {
     const postUrl = `https://www.instagram.com/p/${shortcode}/`;
-
-    // 1. Fetch with Googlebot crawler headers (delivers full uncropped original master carousel)
-    let res = await fetchWithTimeout(postUrl, {
-      'User-Agent': CRAWLER_USER_AGENTS[0],
-    });
-
     let html = '';
-    if (res.ok) {
-      html = await res.text();
+    let title: string | undefined;
+
+    // Tier 1: Googlebot Crawler headers
+    try {
+      const res = await fetchWithTimeout(postUrl, {
+        'User-Agent': CRAWLER_USER_AGENTS[0],
+      });
+      if (res.ok) {
+        html = await res.text();
+      }
+    } catch (e) {
+      console.warn('Tier 1 Googlebot fetch failed:', e);
     }
 
-    // Fallback to Facebook External Hit if needed
-    if (!html || !html.includes('"carousel_media":[')) {
-      const fbRes = await fetchWithTimeout(postUrl, {
-        'User-Agent': CRAWLER_USER_AGENTS[1],
-      });
-      if (fbRes.ok) {
-        const fbHtml = await fbRes.text();
-        if (fbHtml.length > html.length) html = fbHtml;
+    // Tier 2: Facebook External Hit Crawler headers
+    if (!html || (!html.includes('"carousel_media":') && !html.includes('"edge_sidecar_to_children":'))) {
+      try {
+        const fbRes = await fetchWithTimeout(postUrl, {
+          'User-Agent': CRAWLER_USER_AGENTS[1],
+        });
+        if (fbRes.ok) {
+          const fbHtml = await fbRes.text();
+          if (fbHtml.length > html.length) html = fbHtml;
+        }
+      } catch (e) {
+        console.warn('Tier 2 Facebook fetch failed:', e);
       }
     }
 
     let imageUrls = extractCarouselUrlsFromHtml(html);
 
-    // Fallback to embed endpoint if no carousel was found
+    // Tier 3: Instagram Captioned Embed Endpoint (Bypasses Login restrictions)
     if (imageUrls.length === 0) {
-      const embedRes = await fetchWithTimeout(`https://www.instagram.com/p/${shortcode}/embed/`);
-      if (embedRes.ok) {
-        const embedHtml = await embedRes.text();
-        imageUrls = extractCarouselUrlsFromHtml(embedHtml);
+      try {
+        const embedRes = await fetchWithTimeout(`https://www.instagram.com/p/${shortcode}/embed/captioned/`, {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+        });
+        if (embedRes.ok) {
+          const embedHtml = await embedRes.text();
+          const embedUrls = extractCarouselUrlsFromHtml(embedHtml);
+          if (embedUrls.length > 0) {
+            imageUrls = embedUrls;
+            if (!html) html = embedHtml;
+          }
+        }
+      } catch (e) {
+        console.warn('Tier 3 Embed fetch failed:', e);
+      }
+    }
+
+    // Tier 4: Instagram Official oEmbed fallback
+    if (imageUrls.length === 0) {
+      try {
+        const oembedRes = await fetchWithTimeout(`https://api.instagram.com/oembed/?url=https://www.instagram.com/p/${shortcode}/`);
+        if (oembedRes.ok) {
+          const oembedData = await oembedRes.json();
+          if (oembedData.thumbnail_url) {
+            imageUrls = [oembedData.thumbnail_url];
+            if (oembedData.title) title = oembedData.title;
+          }
+        }
+      } catch (e) {
+        console.warn('Tier 4 oEmbed fetch failed:', e);
+      }
+    }
+
+    // Extract Title if available
+    if (!title && html) {
+      const captionMatch = html.match(/<meta property="og:title" content="([^"]+)"/i) ||
+                           html.match(/<title>(.*?)<\/title>/i);
+      if (captionMatch && captionMatch[1]) {
+        title = captionMatch[1].replace(/ • Instagram photos and videos/i, '').trim();
       }
     }
 
@@ -222,10 +288,6 @@ export async function fetchInstagramCarousel(url: string): Promise<InstagramFetc
         errorType: 'NO_MEDIA',
       };
     }
-
-    // Extract Title if available
-    const captionMatch = html.match(/<meta property="og:title" content="([^"]+)"/i);
-    const title = captionMatch ? captionMatch[1] : undefined;
 
     return processImagesInParallel(imageUrls, shortcode, title);
   } catch (err: any) {
@@ -254,11 +316,16 @@ async function processImagesInParallel(
     const filename = `carousel-${slideNumber}.png`;
 
     try {
-      const imgRes = await fetchWithTimeout(
+      let imgRes = await fetchWithTimeout(
         imgUrl,
         { Referer: 'https://www.instagram.com/' },
         10000
       );
+
+      if (!imgRes.ok) {
+        // Retry without referer (some CDNs block referers from third parties)
+        imgRes = await fetchWithTimeout(imgUrl, {}, 10000);
+      }
 
       if (!imgRes.ok) return null;
 

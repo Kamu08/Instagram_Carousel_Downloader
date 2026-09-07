@@ -80,6 +80,16 @@ const PLATFORMS: PlatformConfig[] = [
     example: 'threads.net/@.../post/...',
     tag: 'Photo Carousels & Galleries',
   },
+  {
+    id: 'youtube',
+    name: 'YouTube',
+    badge: '🎬',
+    color: '#FCA5A5',
+    activeBg: 'bg-[#FCA5A5] text-[#1D1815]',
+    placeholder: 'https://www.youtube.com/watch?v=... or /shorts/...',
+    example: 'youtube.com/watch?v=...',
+    tag: 'Videos, Shorts & High-Res Frames',
+  },
 ];
 
 export function UrlInputForm({
@@ -125,7 +135,7 @@ export function UrlInputForm({
   const validateUrl = (value: string): boolean => {
     const trimmed = value.trim();
     if (!trimmed) {
-      setInputError('Please paste a post URL from Instagram, LinkedIn, Twitter/X, or Threads.');
+      setInputError('Please paste a post URL from Instagram, LinkedIn, Twitter/X, Threads, or YouTube.');
       return false;
     }
 
@@ -140,7 +150,7 @@ export function UrlInputForm({
     const detected = detectPlatform(trimmed);
     if (!detected) {
       setInputError(
-        'Please enter a supported URL from Instagram, LinkedIn, Twitter/X, or Threads (e.g. instagram.com/p/..., linkedin.com/posts/..., x.com/.../status/..., threads.net/@.../post/...)'
+        'Please enter a supported URL from Instagram, LinkedIn, Twitter/X, Threads, or YouTube (e.g. instagram.com/p/..., linkedin.com/posts/..., x.com/.../status/..., threads.net/@.../post/..., youtube.com/watch?v=...)'
       );
       return false;
     }
@@ -222,7 +232,7 @@ export function UrlInputForm({
         </h1>
 
         <p className="mt-4 font-marker text-xl sm:text-2xl text-[var(--text-muted)] max-w-2xl mx-auto leading-relaxed">
-          Download carousels and multi-image posts from Instagram, LinkedIn, Twitter/X, and Threads in lossless HD quality! 🚀
+          Download carousels and multi-image posts from Instagram, LinkedIn, Twitter/X, Threads, and YouTube in lossless HD quality! 🚀
         </p>
 
         {/* Feature Sketch Badges */}
@@ -232,6 +242,7 @@ export function UrlInputForm({
             { text: '💼 LinkedIn Document Posts', bg: 'bg-[#93C5FD]' },
             { text: '🐦 Twitter / X Multi-Photos', bg: 'bg-[#A7F3D0]' },
             { text: '🧵 Threads Galleries', bg: 'bg-[#F5A3B3]' },
+            { text: '🎬 YouTube Videos & Shorts', bg: 'bg-[#FCA5A5]' },
           ].map((item, i) => (
             <span
               key={i}
@@ -248,12 +259,12 @@ export function UrlInputForm({
         {/* Top Paper Tape */}
         <div className="tape-top tape-pink" />
 
-        {/* 4 Platform Selector Buttons */}
+        {/* 5 Platform Selector Buttons */}
         <div className="mb-6">
           <label className="block font-display text-xs font-black uppercase tracking-wider text-[var(--text-muted)] mb-2">
             Select Platform:
           </label>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2.5">
             {PLATFORMS.map((plat) => {
               const isSelected = selectedPlatform === plat.id;
               return (

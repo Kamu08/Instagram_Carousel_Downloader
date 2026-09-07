@@ -89,17 +89,19 @@ const GOOGLE_SCRIPT_CODE = `function doPost(e) {
     if (data.action === "sync_collabs" && Array.isArray(data.collabs)) {
       
       // ==========================================
-      // 1. MONTHLY ANALYTICS SUMMARY SHEET
+      // 1. MONTHLY ANALYTICS SUMMARY SHEET (In-Place Update)
       // ==========================================
       var analyticsSheet = ss.getSheetByName("Monthly Analytics");
       if (!analyticsSheet) {
         analyticsSheet = ss.insertSheet("Monthly Analytics", 0);
       }
-      analyticsSheet.clear();
-      analyticsSheet.appendRow([
-        "Month", "Collaborations", "Revenue", "Spend", "Profit", "Pending", "Avg Deal Size"
-      ]);
       
+      var anHeaders = ["Month", "Collaborations", "Revenue", "Spend", "Profit", "Pending", "Avg Deal Size"];
+      if (analyticsSheet.getLastRow() === 0) {
+        analyticsSheet.appendRow(anHeaders);
+      } else {
+        analyticsSheet.getRange(1, 1, 1, 7).setValues([anHeaders]);
+      }
       analyticsSheet.getRange("A1:G1")
         .setFontWeight("bold")
         .setBackground("#1E293B")
@@ -108,14 +110,20 @@ const GOOGLE_SCRIPT_CODE = `function doPost(e) {
       analyticsSheet.setFrozenRows(1);
       
       if (Array.isArray(data.monthlyAnalytics)) {
+        var lastAn = analyticsSheet.getLastRow();
+        if (lastAn > 1) {
+          analyticsSheet.getRange(2, 1, lastAn - 1, 7).clearContent();
+        }
+        
         var totalCollabs = 0;
         var totalRev = 0;
         var totalSpend = 0;
         var totalProfit = 0;
         var totalPending = 0;
+        var anRows = [];
         
         data.monthlyAnalytics.forEach(function(m) {
-          analyticsSheet.appendRow([
+          anRows.push([
             m.monthName,
             m.collaborations,
             m.revenue,
@@ -132,7 +140,7 @@ const GOOGLE_SCRIPT_CODE = `function doPost(e) {
         });
         
         // Grand Total Row
-        analyticsSheet.appendRow([
+        anRows.push([
           "TOTAL",
           totalCollabs,
           totalRev,
@@ -142,16 +150,19 @@ const GOOGLE_SCRIPT_CODE = `function doPost(e) {
           totalCollabs > 0 ? (totalRev / totalCollabs) : 0
         ]);
         
-        var lastAnRow = analyticsSheet.getLastRow();
-        if (lastAnRow > 1) {
-          var totRange = analyticsSheet.getRange(lastAnRow, 1, 1, 7);
-          totRange.setFontWeight("bold").setBackground("#FDE047").setFontColor("#1D1815");
+        if (anRows.length > 0) {
+          analyticsSheet.getRange(2, 1, anRows.length, 7).setValues(anRows);
+          var totRow = anRows.length + 1;
+          analyticsSheet.getRange(totRow, 1, 1, 7)
+            .setFontWeight("bold")
+            .setBackground("#FDE047")
+            .setFontColor("#1D1815");
         }
       }
       analyticsSheet.autoResizeColumns(1, 7);
       
       // ==========================================
-      // 2. SEPARATE MONTH CRM SHEETS (July, August, September, etc.)
+      // 2. SEPARATE MONTH CRM SHEETS (SMART INCREMENTAL UPSERT)
       // ==========================================
       var monthGroups = {};
       data.collabs.forEach(function(item) {
@@ -161,6 +172,11 @@ const GOOGLE_SCRIPT_CODE = `function doPost(e) {
       });
       
       var monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+      var headers = [
+        "Brand", "Campaign", "Collaboration Type", "Deliverable Type", "Deliverable",
+        "Posted Date", "Base Pay", "Bonus", "Total Amount", "Spend", "Net Profit",
+        "Invoice Sent", "Payment Status", "Payment Date", "Status", "Content Link", "Notes", "Collab ID"
+      ];
 
       Object.keys(monthGroups).sort().forEach(function(mKey) {
         var parts = mKey.split("-");
@@ -177,23 +193,45 @@ const GOOGLE_SCRIPT_CODE = `function doPost(e) {
           mSheet = ss.insertSheet(sheetTitle);
         }
         
-        mSheet.clear();
-        mSheet.appendRow([
-          "Brand", "Campaign", "Collaboration Type", "Deliverable Type", "Deliverable",
-          "Posted Date", "Base Pay", "Bonus", "Total Amount", "Spend", "Net Profit",
-          "Invoice Sent", "Payment Status", "Payment Date", "Status", "Content Link", "Notes"
-        ]);
+        if (mSheet.getLastRow() === 0) {
+          mSheet.appendRow(headers);
+        } else {
+          mSheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+        }
         
-        mSheet.getRange("A1:Q1")
+        mSheet.getRange(1, 1, 1, headers.length)
           .setFontWeight("bold")
           .setBackground("#1E293B")
           .setFontColor("#FFFFFF")
           .setHorizontalAlignment("center");
         mSheet.setFrozenRows(1);
         
+        // Read existing rows to build lookup map for in-place upsert
+        var existingData = mSheet.getDataRange().getValues();
+        var rowLookup = {}; // Key: CollabID or (Brand + "_" + PostedDate) -> RowNumber (1-indexed)
+        
+        for (var i = 1; i < existingData.length; i++) {
+          var rBrand = String(existingData[i][0] || "").trim().toLowerCase();
+          var rDate = String(existingData[i][5] || "").trim();
+          var rId = String(existingData[i][17] || "").trim();
+          
+          if (rId) {
+            rowLookup["id_" + rId] = i + 1;
+          }
+          if (rBrand && rDate) {
+            rowLookup["key_" + rBrand + "_" + rDate] = i + 1;
+          }
+        }
+        
         var items = monthGroups[mKey];
         items.forEach(function(c) {
-          mSheet.appendRow([
+          var cId = String(c.ID || c.id || "").trim();
+          var cBrand = String(c.Brand || "").trim().toLowerCase();
+          var cDate = String(c.PostedDate || "").trim();
+          
+          var targetRow = rowLookup["id_" + cId] || rowLookup["key_" + cBrand + "_" + cDate];
+          
+          var rowValues = [
             c.Brand,
             c.Campaign,
             c.CollaborationType,
@@ -210,36 +248,63 @@ const GOOGLE_SCRIPT_CODE = `function doPost(e) {
             c.PaymentDate,
             c.Status,
             c.ContentLink,
-            c.Notes
-          ]);
+            c.Notes,
+            c.ID || c.id || ""
+          ];
+          
+          if (targetRow) {
+            // Update existing row in place without destroying notes or formatting!
+            mSheet.getRange(targetRow, 1, 1, headers.length).setValues([rowValues]);
+          } else {
+            // Append newly added deal
+            mSheet.appendRow(rowValues);
+            var newRowNum = mSheet.getLastRow();
+            mSheet.getRange(newRowNum, 1, 1, headers.length).setBackground(newRowNum % 2 === 0 ? "#EBF2FA" : "#FFFFFF");
+            if (cId) rowLookup["id_" + cId] = newRowNum;
+            if (cBrand && cDate) rowLookup["key_" + cBrand + "_" + cDate] = newRowNum;
+          }
         });
         
-        for (var r = 2; r <= items.length + 1; r++) {
-          mSheet.getRange(r, 1, 1, 17).setBackground(r % 2 === 0 ? "#EBF2FA" : "#FFFFFF");
-        }
-        mSheet.autoResizeColumns(1, 17);
+        mSheet.autoResizeColumns(1, headers.length);
       });
 
       // ==========================================
-      // 3. PAYMENTS TRACKER SHEET
+      // 3. PAYMENTS TRACKER SHEET (Smart Upsert)
       // ==========================================
       var paySheet = ss.getSheetByName("Payments");
       if (!paySheet) {
         paySheet = ss.insertSheet("Payments");
       }
-      paySheet.clear();
-      paySheet.appendRow([
-        "Brand", "Month", "Amount (INR)", "Payment Status", "Payment Date", "Invoice Sent", "Payment Mode", "Notes"
-      ]);
-      paySheet.getRange("A1:H1")
+      var payHeaders = ["Brand", "Month", "Amount (INR)", "Payment Status", "Payment Date", "Invoice Sent", "Payment Mode", "Notes", "Collab ID"];
+      if (paySheet.getLastRow() === 0) {
+        paySheet.appendRow(payHeaders);
+      } else {
+        paySheet.getRange(1, 1, 1, payHeaders.length).setValues([payHeaders]);
+      }
+      paySheet.getRange(1, 1, 1, payHeaders.length)
         .setFontWeight("bold")
         .setBackground("#0F766E")
         .setFontColor("#FFFFFF")
         .setHorizontalAlignment("center");
       paySheet.setFrozenRows(1);
       
+      var payData = paySheet.getDataRange().getValues();
+      var payLookup = {};
+      for (var p = 1; p < payData.length; p++) {
+        var pBrand = String(payData[p][0] || "").trim().toLowerCase();
+        var pMonth = String(payData[p][1] || "").trim();
+        var pId = String(payData[p][8] || "").trim();
+        if (pId) payLookup["id_" + pId] = p + 1;
+        if (pBrand && pMonth) payLookup["key_" + pBrand + "_" + pMonth] = p + 1;
+      }
+      
       data.collabs.forEach(function(c) {
-        paySheet.appendRow([
+        var cId = String(c.ID || c.id || "").trim();
+        var cBrand = String(c.Brand || "").trim().toLowerCase();
+        var cMonth = String(c.MonthKey || "").trim();
+        var pRow = payLookup["id_" + cId] || payLookup["key_" + cBrand + "_" + cMonth];
+        
+        var pValues = [
           c.Brand,
           c.MonthKey,
           c.TotalAmount,
@@ -247,13 +312,21 @@ const GOOGLE_SCRIPT_CODE = `function doPost(e) {
           c.PaymentDate,
           c.InvoiceSent,
           c.PaymentMode || "-",
-          c.Notes
-        ]);
+          c.Notes,
+          c.ID || c.id || ""
+        ];
+        
+        if (pRow) {
+          paySheet.getRange(pRow, 1, 1, payHeaders.length).setValues([pValues]);
+        } else {
+          paySheet.appendRow(pValues);
+          var newPayRow = paySheet.getLastRow();
+          paySheet.getRange(newPayRow, 1, 1, payHeaders.length).setBackground(newPayRow % 2 === 0 ? "#F0FDFA" : "#FFFFFF");
+          if (cId) payLookup["id_" + cId] = newPayRow;
+          if (cBrand && cMonth) payLookup["key_" + cBrand + "_" + cMonth] = newPayRow;
+        }
       });
-      for (var p = 2; p <= data.collabs.length + 1; p++) {
-        paySheet.getRange(p, 1, 1, 8).setBackground(p % 2 === 0 ? "#F0FDFA" : "#FFFFFF");
-      }
-      paySheet.autoResizeColumns(1, 8);
+      paySheet.autoResizeColumns(1, payHeaders.length);
 
       // ==========================================
       // 4. BRAND DATABASE SHEET
@@ -273,10 +346,12 @@ const GOOGLE_SCRIPT_CODE = `function doPost(e) {
       if (!brandSheet) {
         brandSheet = ss.insertSheet("Brand Database");
       }
-      brandSheet.clear();
-      brandSheet.appendRow([
-        "Brand Name", "Total Deals Done", "Lifetime Revenue (INR)", "Latest Deal Date"
-      ]);
+      var brandHeaders = ["Brand Name", "Total Deals Done", "Lifetime Revenue (INR)", "Latest Deal Date"];
+      if (brandSheet.getLastRow() === 0) {
+        brandSheet.appendRow(brandHeaders);
+      } else {
+        brandSheet.getRange(1, 1, 1, 4).setValues([brandHeaders]);
+      }
       brandSheet.getRange("A1:D1")
         .setFontWeight("bold")
         .setBackground("#4338CA")
@@ -285,24 +360,34 @@ const GOOGLE_SCRIPT_CODE = `function doPost(e) {
       brandSheet.setFrozenRows(1);
 
       var brandKeys = Object.keys(brandMap).sort();
+      var lastBr = brandSheet.getLastRow();
+      if (lastBr > 1) {
+        brandSheet.getRange(2, 1, lastBr - 1, 4).clearContent();
+      }
+      
+      var brRows = [];
       brandKeys.forEach(function(bName) {
         var bInfo = brandMap[bName];
-        brandSheet.appendRow([
+        brRows.push([
           bName,
           bInfo.count,
           bInfo.totalRev,
           bInfo.latestDate
         ]);
       });
-      for (var b = 2; b <= brandKeys.length + 1; b++) {
-        brandSheet.getRange(b, 1, 1, 4).setBackground(b % 2 === 0 ? "#EEF2FF" : "#FFFFFF");
+      if (brRows.length > 0) {
+        brandSheet.getRange(2, 1, brRows.length, 4).setValues(brRows);
+        for (var b = 2; b <= brRows.length + 1; b++) {
+          brandSheet.getRange(b, 1, 1, 4).setBackground(b % 2 === 0 ? "#EEF2FF" : "#FFFFFF");
+        }
       }
       brandSheet.autoResizeColumns(1, 4);
       
       return ContentService.createTextOutput(JSON.stringify({
         status: "success",
         syncedCount: data.collabs.length,
-        sheetsCreated: Object.keys(monthGroups).length + 3
+        sheetsCreated: Object.keys(monthGroups).length + 3,
+        mode: "incremental_upsert"
       })).setMimeType(ContentService.MimeType.JSON);
     }
   } catch (err) {
@@ -624,6 +709,17 @@ export function CollabManagerModal({ isOpen, onClose }: CollabManagerModalProps)
           </div>
 
           <div className="flex items-center gap-2">
+            <a
+              href="https://docs.google.com/spreadsheets/d/1OCUbKY7KmoIlpJ6Os4sNZPhKZCl-ZfLJF4rfrtO96IQ/edit"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="px-3.5 py-1.5 rounded-lg bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border border-emerald-500/30 text-xs font-medium flex items-center gap-1.5 transition-colors cursor-pointer"
+              title="Open Google Sheet in new tab"
+            >
+              <ExternalLink className="w-3.5 h-3.5 text-emerald-400" />
+              <span className="hidden sm:inline">Open Sheet</span>
+            </a>
+
             <button
               type="button"
               onClick={handleSyncToGoogleSheet}

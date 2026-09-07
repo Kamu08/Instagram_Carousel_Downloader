@@ -26,7 +26,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json(
         {
           success: false,
-          error: 'Please paste a valid post URL (Instagram, LinkedIn, Twitter/X, or Threads).',
+          error: 'Please paste a valid post URL (Instagram, LinkedIn, Twitter/X, Threads, or YouTube).',
           errorType: 'INVALID_URL',
         },
         { status: 400 }

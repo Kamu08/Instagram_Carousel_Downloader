@@ -28,7 +28,7 @@ export interface LinkedInOptions {
   backgroundColorHex?: string;
 }
 
-export type PlatformType = 'instagram' | 'linkedin' | 'twitter' | 'threads';
+export type PlatformType = 'instagram' | 'linkedin' | 'twitter' | 'threads' | 'youtube';
 
 export interface InstagramFetchResult {
   success: boolean;

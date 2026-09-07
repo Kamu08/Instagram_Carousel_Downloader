@@ -19,6 +19,13 @@ export function detectPlatform(inputUrl: string): PlatformType | null {
   if (clean.includes('threads.net') || clean.includes('threads.com')) {
     return 'threads';
   }
+  if (
+    clean.includes('youtube.com') ||
+    clean.includes('youtu.be') ||
+    clean.includes('m.youtube.com')
+  ) {
+    return 'youtube';
+  }
 
   return null;
 }

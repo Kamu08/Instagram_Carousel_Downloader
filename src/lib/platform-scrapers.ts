@@ -472,7 +472,135 @@ export async function fetchThreadsPost(inputUrl: string): Promise<MultiPlatformF
 
 /**
  * -------------------------------------------------------------
- * 4. UNIFIED MULTI-PLATFORM CAROUSEL DISPATCHER
+ * 4. YOUTUBE VIDEO & SHORTS SCRAPER
+ * -------------------------------------------------------------
+ */
+export function extractYouTubeVideoId(inputUrl: string): string | null {
+  if (!inputUrl || typeof inputUrl !== 'string') return null;
+  const clean = inputUrl.trim();
+
+  // Handle standard watch URLs, shorts, embed, youtu.be
+  const patterns = [
+    /(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/|youtube\.com\/shorts\/)([A-Za-z0-9_-]{11})/i,
+    /youtube\.com\/v\/([A-Za-z0-9_-]{11})/i,
+    /youtube\.com\/e\/([A-Za-z0-9_-]{11})/i,
+    /youtu\.be\/([A-Za-z0-9_-]{11})/i,
+  ];
+
+  for (const pattern of patterns) {
+    const match = clean.match(pattern);
+    if (match && match[1]) {
+      return match[1];
+    }
+  }
+
+  // Direct 11-char ID
+  if (/^[A-Za-z0-9_-]{11}$/.test(clean)) {
+    return clean;
+  }
+
+  return null;
+}
+
+export async function fetchYouTubePost(inputUrl: string): Promise<MultiPlatformFetchResult> {
+  const videoId = extractYouTubeVideoId(inputUrl);
+
+  if (!videoId) {
+    return {
+      success: false,
+      shortcode: '',
+      platform: 'youtube',
+      slideCount: 0,
+      slides: [],
+      error: 'Please enter a valid YouTube video or Shorts URL (e.g. https://www.youtube.com/watch?v=... or https://youtube.com/shorts/...).',
+      errorType: 'INVALID_URL',
+    };
+  }
+
+  let title = `YouTube Video (${videoId})`;
+  let author = 'YouTube Creator';
+  let caption = '';
+
+  // 1. Fetch metadata via YouTube oEmbed
+  try {
+    const oembedUrl = `https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=${videoId}&format=json`;
+    const res = await fetchWithTimeout(oembedUrl);
+    if (res.ok) {
+      const data = await res.json();
+      if (data.title) title = data.title;
+      if (data.author_name) author = data.author_name;
+    }
+  } catch (err) {
+    console.warn('YouTube oEmbed fetch error:', err);
+  }
+
+  // 2. Discover available high-res thumbnail and storyboard frame URLs
+  const candidateUrls = [
+    `https://i.ytimg.com/vi/${videoId}/maxresdefault.jpg`,
+    `https://i.ytimg.com/vi/${videoId}/sddefault.jpg`,
+    `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`,
+    `https://i.ytimg.com/vi/${videoId}/1.jpg`,
+    `https://i.ytimg.com/vi/${videoId}/2.jpg`,
+    `https://i.ytimg.com/vi/${videoId}/3.jpg`,
+  ];
+
+  const validImageUrls: string[] = [];
+
+  // Check and collect valid images
+  for (const imgUrl of candidateUrls) {
+    try {
+      const checkRes = await fetch(imgUrl, { method: 'HEAD', cache: 'no-store' });
+      if (checkRes.ok && checkRes.headers.get('content-type')?.includes('image')) {
+        // Exclude default placeholder 120x90 404 images from YouTube
+        const contentLength = Number(checkRes.headers.get('content-length') || 0);
+        if (contentLength > 1500 || contentLength === 0) {
+          if (!validImageUrls.includes(imgUrl)) {
+            validImageUrls.push(imgUrl);
+          }
+        }
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  // Ensure we at least have hqdefault if maxres was unavailable
+  if (validImageUrls.length === 0) {
+    validImageUrls.push(`https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`);
+  }
+
+  // 3. Process slides
+  try {
+    const slides = await Promise.all(
+      validImageUrls.map((url, idx) => downloadAndProcessSlide(url, idx))
+    );
+
+    return {
+      success: true,
+      shortcode: videoId,
+      platform: 'youtube',
+      title,
+      author,
+      caption: `YouTube Video: ${title} by ${author}`,
+      slideCount: slides.length,
+      slides,
+    };
+  } catch (err: any) {
+    return {
+      success: false,
+      shortcode: videoId,
+      platform: 'youtube',
+      slideCount: 0,
+      slides: [],
+      error: err.message || 'Failed to download and process YouTube video frames.',
+      errorType: 'UNKNOWN',
+    };
+  }
+}
+
+/**
+ * -------------------------------------------------------------
+ * 5. UNIFIED MULTI-PLATFORM CAROUSEL DISPATCHER
  * -------------------------------------------------------------
  */
 export async function fetchMultiPlatformCarousel(inputUrl: string): Promise<MultiPlatformFetchResult> {
@@ -485,6 +613,8 @@ export async function fetchMultiPlatformCarousel(inputUrl: string): Promise<Mult
       return fetchLinkedInPost(inputUrl);
     case 'threads':
       return fetchThreadsPost(inputUrl);
+    case 'youtube':
+      return fetchYouTubePost(inputUrl);
     case 'instagram':
     default:
       return fetchInstagramCarousel(inputUrl);

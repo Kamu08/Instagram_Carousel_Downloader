@@ -55,6 +55,9 @@ export interface CollabMonthSummary {
   totalRevenue: number;
   totalSpend: number;
   totalProfit: number;
+  amountCollected: number; // Amount already collected (Paid)
+  amountPending: number; // Amount need to be collected (Pending/Invoiced)
+  paidCount: number;
   pendingCount: number;
   avgDealSize: number;
   currency: Currency;

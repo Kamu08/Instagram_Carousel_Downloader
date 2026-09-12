@@ -197,6 +197,172 @@ export async function fetchTwitterPost(inputUrl: string): Promise<MultiPlatformF
 }
 
 /**
+ * Unescape LinkedIn raw string / CDN links
+ */
+function unescapeLinkedInString(str: string): string {
+  return str
+    .replace(/\\\/|\\\//g, '/')
+    .replace(/\\u0026/g, '&')
+    .replace(/&amp;/g, '&')
+    .replace(/\\u00253A/g, ':')
+    .replace(/\\u00252F/g, '/')
+    .replace(/\\"/g, '"');
+}
+
+/**
+ * Extract activity / ugcPost / share ID from any LinkedIn URL
+ */
+export function extractLinkedInId(inputUrl: string): { id: string | null; type: 'activity' | 'ugcPost' | 'share' } {
+  if (!inputUrl) return { id: null, type: 'activity' };
+  const clean = inputUrl.trim();
+
+  const ugcMatch = clean.match(/(?:ugcPost|urn:li:ugcPost)[-:]?(\d{15,22})/i);
+  if (ugcMatch && ugcMatch[1]) return { id: ugcMatch[1], type: 'ugcPost' };
+
+  const actMatch = clean.match(/(?:activity|urn:li:activity)[-:]?(\d{15,22})/i);
+  if (actMatch && actMatch[1]) return { id: actMatch[1], type: 'activity' };
+
+  const shareMatch = clean.match(/(?:share|urn:li:share)[-:]?(\d{15,22})/i);
+  if (shareMatch && shareMatch[1]) return { id: shareMatch[1], type: 'share' };
+
+  const anyDigits = clean.match(/(\d{16,22})/);
+  if (anyDigits && anyDigits[1]) return { id: anyDigits[1], type: 'activity' };
+
+  return { id: null, type: 'activity' };
+}
+
+/**
+ * Extract all media slide URLs from LinkedIn HTML (PDF Documents, Multi-Images, Single Image)
+ */
+function extractLinkedInMediaUrls(html: string): string[] {
+  if (!html) return [];
+  const unescaped = unescapeLinkedInString(html);
+  const rawUrls: string[] = [];
+
+  // 1. Direct Regex match for all media.licdn.com / dms image URLs
+  const mediaRegex = /https:\/\/(?:media(?:-exp\d+)?\.licdn\.com|dms\.licdn\.com)\/dms\/image\/[^\s"'<>\\]+/gi;
+  const matches = unescaped.match(mediaRegex) || [];
+
+  for (let u of matches) {
+    u = u.replace(/[",;()]+$/, '').trim();
+    
+    const isExcluded =
+      u.includes('profile-displayphoto') ||
+      u.includes('ghost-avatar') ||
+      u.includes('company-logo') ||
+      u.includes('mini-profile') ||
+      u.includes('shrink_100_100') ||
+      u.includes('shrink_50_50') ||
+      u.includes('pixel') ||
+      u.includes('tracking');
+
+    if (!isExcluded && !rawUrls.includes(u)) {
+      rawUrls.push(u);
+    }
+  }
+
+  // 2. Parse JSON-LD blocks
+  try {
+    const jsonLdMatches = html.matchAll(/<script\s+type=["']application\/ld\+json["']>([\s\S]*?)<\/script>/gi);
+    for (const match of jsonLdMatches) {
+      if (match[1]) {
+        try {
+          const parsed = JSON.parse(match[1]);
+          if (parsed.image) {
+            const imgList = Array.isArray(parsed.image) ? parsed.image : [parsed.image];
+            for (const img of imgList) {
+              const imgUrl = typeof img === 'string' ? img : img.url || img.contentUrl;
+              if (imgUrl && typeof imgUrl === 'string') {
+                const cleanImg = unescapeLinkedInString(imgUrl);
+                if (!cleanImg.includes('profile-displayphoto') && !cleanImg.includes('company-logo') && !rawUrls.includes(cleanImg)) {
+                  rawUrls.push(cleanImg);
+                }
+              }
+            }
+          }
+        } catch {}
+      }
+    }
+  } catch {}
+
+  // 3. Parse embedded <code> blocks (where LinkedIn stores document carousel manifests & slide streams)
+  try {
+    const codeBlocks = html.matchAll(/<code[^>]*>([\s\S]*?)<\/code>/gi);
+    for (const block of codeBlocks) {
+      if (block[1] && block[1].includes('media.licdn.com')) {
+        const codeUrls = unescapeLinkedInString(block[1]).match(/https:\/\/media\.licdn\.com\/dms\/image\/[^\s"',\\]+/gi) || [];
+        for (const cu of codeUrls) {
+          if (!cu.includes('profile-displayphoto') && !cu.includes('company-logo') && !rawUrls.includes(cu)) {
+            rawUrls.push(cu);
+          }
+        }
+      }
+    }
+  } catch {}
+
+  // 4. OpenGraph fallback
+  if (rawUrls.length === 0) {
+    const ogMatch = unescaped.match(/<meta\s+property=["']og:image["']\s+content=["'](https?:\/\/[^"'\s]+)["']/i);
+    if (ogMatch && ogMatch[1]) {
+      const cleanOg = ogMatch[1].replace(/&amp;/g, '&');
+      if (!cleanOg.includes('profile-displayphoto') && !cleanOg.includes('company-logo')) {
+        rawUrls.push(cleanOg);
+      }
+    }
+  }
+
+  // Check if we have PDF / Document Carousel slides
+  const documentSlides = rawUrls.filter((u) => u.includes('feedshare-document-images') || u.includes('document-images') || u.includes('document-pdf-images'));
+
+  if (documentSlides.length > 0) {
+    // Group and sort PDF document slides by page index number
+    const pageMap = new Map<number, string>();
+
+    for (const docUrl of documentSlides) {
+      // LinkedIn document pages typically have /<pageNumber>/ in their path, e.g. /feedshare-document-images_800/0/1723456789
+      const pageIndexMatch = docUrl.match(/feedshare-document-(?:pdf-)?images_\d+\/(?:feedshare-document-(?:pdf-)?images_\d+\/)?(\d+)\//i) ||
+                             docUrl.match(/\/(\d+)\/\d+\?/) ||
+                             docUrl.match(/page[_-]?(\d+)/i);
+
+      const pageNum = pageIndexMatch ? parseInt(pageIndexMatch[1], 10) : pageMap.size;
+      
+      // If we already have this page, pick higher resolution (e.g. 1080/2048 over 800)
+      if (!pageMap.has(pageNum)) {
+        pageMap.set(pageNum, docUrl);
+      } else {
+        const existing = pageMap.get(pageNum)!;
+        if ((docUrl.includes('2048') || docUrl.includes('1080') || docUrl.includes('1280')) && !existing.includes('2048')) {
+          pageMap.set(pageNum, docUrl);
+        }
+      }
+    }
+
+    // Sort in ascending page order: Page 0 (Slide 1), Page 1 (Slide 2), Page 2 (Slide 3)...
+    const sortedPages = Array.from(pageMap.keys()).sort((a, b) => a - b).map((k) => pageMap.get(k)!);
+    if (sortedPages.length > 0) {
+      return sortedPages;
+    }
+  }
+
+  // 5. Multi-Image / Single-Image: Group and pick highest resolution for each distinct image
+  const grouped: { [key: string]: string[] } = {};
+  for (const u of rawUrls) {
+    const keyMatch = u.match(/\/dms\/image\/([A-Za-z0-9_-]+)/i);
+    const key = keyMatch ? keyMatch[1] : u.split('?')[0];
+    if (!grouped[key]) grouped[key] = [];
+    grouped[key].push(u);
+  }
+
+  return Object.values(grouped).map((urls) => {
+    return (
+      urls.find((u) => u.includes('shrink_1280') || u.includes('shrink_2048') || u.includes('shrink_800')) ||
+      urls.find((u) => !u.includes('shrink_100') && !u.includes('shrink_200')) ||
+      urls[0]
+    );
+  });
+}
+
+/**
  * -------------------------------------------------------------
  * 2. LINKEDIN POST & DOCUMENT CAROUSEL SCRAPER
  * -------------------------------------------------------------
@@ -204,40 +370,59 @@ export async function fetchTwitterPost(inputUrl: string): Promise<MultiPlatformF
 export async function fetchLinkedInPost(inputUrl: string): Promise<MultiPlatformFetchResult> {
   const cleanUrl = inputUrl.trim();
 
-  // Validate LinkedIn URL
-  if (!cleanUrl.includes('linkedin.com/')) {
+  // Validate LinkedIn URL (including lnkd.in short URLs)
+  if (!cleanUrl.includes('linkedin.com') && !cleanUrl.includes('lnkd.in')) {
     return {
       success: false,
       shortcode: '',
       platform: 'linkedin',
       slideCount: 0,
       slides: [],
-      error: 'Please enter a valid LinkedIn post or document URL (e.g. https://www.linkedin.com/posts/... or https://www.linkedin.com/feed/update/...).',
+      error: 'Please enter a valid LinkedIn post or document URL (e.g. https://www.linkedin.com/posts/... or https://lnkd.in/...).',
       errorType: 'INVALID_URL',
     };
   }
+
+  // Resolve short links (such as lnkd.in/p/... or lnkd.in/...)
+  let targetUrl = cleanUrl;
+  if (cleanUrl.includes('lnkd.in')) {
+    try {
+      const redirectRes = await fetch(cleanUrl, {
+        method: 'GET',
+        redirect: 'follow',
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+          Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        },
+      });
+      if (redirectRes.url && (redirectRes.url.includes('linkedin.com') || redirectRes.url.includes('lnkd.in'))) {
+        targetUrl = redirectRes.url;
+      }
+    } catch (err) {
+      console.warn('Failed to resolve lnkd.in redirect:', err);
+    }
+  }
+
+  const { id: extractedId, type: idType } = extractLinkedInId(targetUrl);
+  const postId = extractedId || `li_${Date.now()}`;
 
   let imageUrls: string[] = [];
   let author = 'LinkedIn Author';
   let caption = '';
 
-  // Extract ID or slug
-  const idMatch = cleanUrl.match(/(?:activity|ugcPost|share)[-:]?(\d+)/i) || cleanUrl.match(/posts\/([A-Za-z0-9_-]+)/i);
-  const postId = idMatch ? idMatch[1] : `li_${Date.now()}`;
+  const headers = {
+    'User-Agent': 'Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)',
+    Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+    'Accept-Language': 'en-US,en;q=0.9',
+  };
 
-  // Fetch Public LinkedIn Post & Embed HTML
+  // Tier 1: Fetch Direct URL with Crawler Headers
   try {
-    const headers = {
-      'User-Agent': CRAWLER_USER_AGENTS[1], // Facebook/Googlebot headers unlock public post rendering
-      Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-    };
-
-    // Try fetching the original post
-    const res = await fetchWithTimeout(cleanUrl, headers);
+    const res = await fetchWithTimeout(targetUrl, headers);
     if (res.ok) {
       const html = await res.text();
 
-      // 1. Author and Title extraction
+      // Extract Author & Caption
       const authorMatch = html.match(/<meta\s+property=["']og:title["']\s+content=["'](.*?)["']/i) ||
                           html.match(/<title>(.*?)<\/title>/i);
       if (authorMatch && authorMatch[1]) {
@@ -249,53 +434,58 @@ export async function fetchLinkedInPost(inputUrl: string): Promise<MultiPlatform
         caption = descMatch[1].trim();
       }
 
-      // 2. Extract Document / Multi-image slide URLs (media.licdn.com or dms.licdn.com)
-      const dmsMatches = html.match(/https:\/\/media\.licdn\.com\/dms\/image\/[A-Za-z0-9_.-]+(?:\?[^"'\s<>]+)?/g) || [];
-      const dataUrls = html.match(/data-delayed-url=["'](https:\/\/media\.licdn\.com\/[^"']+)["']/g) || [];
-
-      for (const raw of [...dmsMatches, ...dataUrls]) {
-        const cleanImgUrl = raw.replace(/^data-delayed-url=["']/, '').replace(/["']$/, '');
-        // Exclude small profile avatars / icons
-        if (
-          !cleanImgUrl.includes('profile-displayphoto') &&
-          !cleanImgUrl.includes('ghost-avatar') &&
-          !cleanImgUrl.includes('company-logo') &&
-          !imageUrls.includes(cleanImgUrl)
-        ) {
-          imageUrls.push(cleanImgUrl);
-        }
-      }
-
-      // 3. Fallback to OpenGraph primary image if no gallery extracted
-      if (imageUrls.length === 0) {
-        const ogImage = html.match(/<meta\s+property=["']og:image["']\s+content=["'](https?:\/\/[^"']+)["']/i);
-        if (ogImage && ogImage[1]) {
-          imageUrls.push(ogImage[1]);
-        }
-      }
+      imageUrls = extractLinkedInMediaUrls(html);
     }
   } catch (err) {
-    console.warn('LinkedIn direct fetch error:', err);
+    console.warn('LinkedIn Tier 1 fetch error:', err);
   }
 
-  // If still no images found, try fetching the embed route if activity ID exists
-  if (imageUrls.length === 0 && idMatch && idMatch[1]) {
-    try {
-      const embedUrl = `https://www.linkedin.com/embed/feed/update/urn:li:activity:${idMatch[1]}`;
-      const embedRes = await fetchWithTimeout(embedUrl, {
-        'User-Agent': CRAWLER_USER_AGENTS[0],
-      });
-      if (embedRes.ok) {
-        const embedHtml = await embedRes.text();
-        const matches = embedHtml.match(/https:\/\/media\.licdn\.com\/dms\/image\/[A-Za-z0-9_.-]+(?:\?[^"'\s<>]+)?/g) || [];
-        for (const img of matches) {
-          if (!imageUrls.includes(img) && !img.includes('profile-displayphoto')) {
-            imageUrls.push(img);
+  // Tier 2: Fetch Public Embed Endpoint (Essential for Multi-page PDF Document Carousels)
+  if ((imageUrls.length <= 1 || imageUrls.some((u) => u.includes('document-images'))) && extractedId) {
+    const embedCandidates = [
+      `https://www.linkedin.com/embed/feed/update/urn:li:${idType}:${extractedId}`,
+      `https://www.linkedin.com/embed/feed/update/urn:li:activity:${extractedId}`,
+      `https://www.linkedin.com/embed/feed/update/urn:li:ugcPost:${extractedId}`,
+    ];
+
+    for (const embedUrl of embedCandidates) {
+      try {
+        const embedRes = await fetchWithTimeout(embedUrl, {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+        });
+        if (embedRes.ok) {
+          const embedHtml = await embedRes.text();
+          const embedUrls = extractLinkedInMediaUrls(embedHtml);
+          if (embedUrls.length > imageUrls.length) {
+            imageUrls = embedUrls;
+            if (author === 'LinkedIn Author') {
+              const authorMatch = embedHtml.match(/<title>(.*?)<\/title>/i);
+              if (authorMatch && authorMatch[1]) {
+                author = authorMatch[1].replace(/ \| LinkedIn$/i, '').trim();
+              }
+            }
           }
+        }
+      } catch (err) {
+        console.warn('LinkedIn Tier 2 embed fetch error:', err);
+      }
+    }
+  }
+
+  // Tier 3: LinkedIn oEmbed Fallback
+  if (imageUrls.length === 0) {
+    try {
+      const oembedUrl = `https://www.linkedin.com/oembed?url=${encodeURIComponent(targetUrl)}&format=json`;
+      const oembedRes = await fetchWithTimeout(oembedUrl);
+      if (oembedRes.ok) {
+        const oembedData = await oembedRes.json();
+        if (oembedData.author_name) author = oembedData.author_name;
+        if (oembedData.thumbnail_url && !imageUrls.includes(oembedData.thumbnail_url)) {
+          imageUrls.push(oembedData.thumbnail_url);
         }
       }
     } catch (err) {
-      console.warn('LinkedIn embed fetch error:', err);
+      console.warn('LinkedIn Tier 3 oEmbed error:', err);
     }
   }
 
@@ -306,7 +496,7 @@ export async function fetchLinkedInPost(inputUrl: string): Promise<MultiPlatform
       platform: 'linkedin',
       slideCount: 0,
       slides: [],
-      error: 'Could not extract images from this LinkedIn post. The post might be private, restricted to logged-in members, or contain no images. You can also upload slide images directly.',
+      error: 'Could not extract images from this LinkedIn post. The post might be private, restricted to logged-in members, or contain no images. You can also upload slide images directly using the upload button below.',
       errorType: 'NO_MEDIA',
     };
   }

@@ -96,13 +96,13 @@ const GOOGLE_SCRIPT_CODE = `function doPost(e) {
         analyticsSheet = ss.insertSheet("Monthly Analytics", 0);
       }
       
-      var anHeaders = ["Month", "Collaborations", "Revenue", "Spend", "Profit", "Pending", "Avg Deal Size"];
+      var anHeaders = ["Month", "Collaborations", "Revenue", "Spend", "Profit", "Amount Collected", "Amount Pending", "Avg Deal Size"];
       if (analyticsSheet.getLastRow() === 0) {
         analyticsSheet.appendRow(anHeaders);
       } else {
-        analyticsSheet.getRange(1, 1, 1, 7).setValues([anHeaders]);
+        analyticsSheet.getRange(1, 1, 1, 8).setValues([anHeaders]);
       }
-      analyticsSheet.getRange("A1:G1")
+      analyticsSheet.getRange("A1:H1")
         .setFontWeight("bold")
         .setBackground("#1E293B")
         .setFontColor("#FFFFFF")
@@ -112,31 +112,36 @@ const GOOGLE_SCRIPT_CODE = `function doPost(e) {
       if (Array.isArray(data.monthlyAnalytics)) {
         var lastAn = analyticsSheet.getLastRow();
         if (lastAn > 1) {
-          analyticsSheet.getRange(2, 1, lastAn - 1, 7).clearContent();
+          analyticsSheet.getRange(2, 1, lastAn - 1, 8).clearContent();
         }
         
         var totalCollabs = 0;
         var totalRev = 0;
         var totalSpend = 0;
         var totalProfit = 0;
-        var totalPending = 0;
+        var totalCollected = 0;
+        var totalPendingAmount = 0;
         var anRows = [];
         
         data.monthlyAnalytics.forEach(function(m) {
+          var mColl = m.amountCollected || 0;
+          var mPend = m.amountPending || 0;
           anRows.push([
             m.monthName,
             m.collaborations,
             m.revenue,
             m.spend,
             m.profit,
-            m.pending,
+            mColl,
+            mPend,
             m.avgDealSize
           ]);
           totalCollabs += m.collaborations;
           totalRev += m.revenue;
           totalSpend += m.spend;
           totalProfit += m.profit;
-          totalPending += m.pending;
+          totalCollected += mColl;
+          totalPendingAmount += mPend;
         });
         
         // Grand Total Row
@@ -146,20 +151,21 @@ const GOOGLE_SCRIPT_CODE = `function doPost(e) {
           totalRev,
           totalSpend,
           totalProfit,
-          totalPending,
+          totalCollected,
+          totalPendingAmount,
           totalCollabs > 0 ? (totalRev / totalCollabs) : 0
         ]);
         
         if (anRows.length > 0) {
-          analyticsSheet.getRange(2, 1, anRows.length, 7).setValues(anRows);
+          analyticsSheet.getRange(2, 1, anRows.length, 8).setValues(anRows);
           var totRow = anRows.length + 1;
-          analyticsSheet.getRange(totRow, 1, 1, 7)
+          analyticsSheet.getRange(totRow, 1, 1, 8)
             .setFontWeight("bold")
             .setBackground("#FDE047")
             .setFontColor("#1D1815");
         }
       }
-      analyticsSheet.autoResizeColumns(1, 7);
+      analyticsSheet.autoResizeColumns(1, 8);
       
       // ==========================================
       // 2. SEPARATE MONTH CRM SHEETS (SMART INCREMENTAL UPSERT)
@@ -462,9 +468,22 @@ export function CollabManagerModal({ isOpen, onClose }: CollabManagerModalProps)
     const totalRevenue = allMonthsSummary.reduce((s, m) => s + m.totalRevenue, 0);
     const totalSpend = allMonthsSummary.reduce((s, m) => s + m.totalSpend, 0);
     const totalProfit = allMonthsSummary.reduce((s, m) => s + m.totalProfit, 0);
+    const amountCollected = allMonthsSummary.reduce((s, m) => s + (m.amountCollected || 0), 0);
+    const amountPending = allMonthsSummary.reduce((s, m) => s + (m.amountPending || 0), 0);
+    const paidCount = allMonthsSummary.reduce((s, m) => s + (m.paidCount || 0), 0);
     const pendingCount = allMonthsSummary.reduce((s, m) => s + m.pendingCount, 0);
     const avgDealSize = totalCollabs > 0 ? totalRevenue / totalCollabs : 0;
-    return { totalCollabs, totalRevenue, totalSpend, totalProfit, pendingCount, avgDealSize };
+    return {
+      totalCollabs,
+      totalRevenue,
+      totalSpend,
+      totalProfit,
+      amountCollected,
+      amountPending,
+      paidCount,
+      pendingCount,
+      avgDealSize,
+    };
   }, [allMonthsSummary]);
 
   // Filtered Collabs for Table
@@ -896,11 +915,12 @@ export function CollabManagerModal({ isOpen, onClose }: CollabManagerModalProps)
         {/* Body Content */}
         <div className="flex-1 overflow-y-auto no-scrollbar p-5 space-y-5">
           
-          {/* VIEW 1: MONTHLY ANALYTICS (Image 4 format) */}
+          {/* VIEW 1: MONTHLY ANALYTICS */}
           {activeView === 'analytics' ? (
             <div className="space-y-5 animate-fadeIn">
-              {/* Financial KPI Cards */}
-              <div className="grid grid-cols-2 lg:grid-cols-4 gap-3.5">
+              {/* Financial KPI Cards (5 Sections) */}
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3.5">
+                {/* 1. Total Revenue */}
                 <div className="p-4 rounded-xl bg-slate-50 dark:bg-zinc-900/40 border border-slate-200/80 dark:border-zinc-800">
                   <span className="text-xs font-medium text-slate-500 dark:text-slate-400">Total Revenue</span>
                   <p className="font-semibold text-2xl text-slate-900 dark:text-slate-100 mt-1">
@@ -909,6 +929,7 @@ export function CollabManagerModal({ isOpen, onClose }: CollabManagerModalProps)
                   <span className="text-[11px] text-slate-500">{overallTotals.totalCollabs} Deals Across All Months</span>
                 </div>
 
+                {/* 2. Total Spend */}
                 <div className="p-4 rounded-xl bg-slate-50 dark:bg-zinc-900/40 border border-slate-200/80 dark:border-zinc-800">
                   <span className="text-xs font-medium text-slate-500 dark:text-slate-400">Total Spend</span>
                   <p className="font-semibold text-2xl text-rose-600 dark:text-rose-400 mt-1">
@@ -917,6 +938,7 @@ export function CollabManagerModal({ isOpen, onClose }: CollabManagerModalProps)
                   <span className="text-[11px] text-slate-500">Production &amp; Outsource Costs</span>
                 </div>
 
+                {/* 3. Net Profit */}
                 <div className="p-4 rounded-xl bg-slate-50 dark:bg-zinc-900/40 border border-slate-200/80 dark:border-zinc-800">
                   <span className="text-xs font-medium text-slate-500 dark:text-slate-400">Net Profit</span>
                   <p className="font-semibold text-2xl text-emerald-600 dark:text-emerald-400 mt-1">
@@ -925,12 +947,26 @@ export function CollabManagerModal({ isOpen, onClose }: CollabManagerModalProps)
                   <span className="text-[11px] text-emerald-600 dark:text-emerald-400 font-medium">Take-Home Profit</span>
                 </div>
 
+                {/* 4. Amount Collected */}
                 <div className="p-4 rounded-xl bg-slate-50 dark:bg-zinc-900/40 border border-slate-200/80 dark:border-zinc-800">
-                  <span className="text-xs font-medium text-slate-500 dark:text-slate-400">Avg Deal Size</span>
-                  <p className="font-semibold text-2xl text-slate-900 dark:text-slate-100 mt-1">
-                    ₹{Math.round(overallTotals.avgDealSize).toLocaleString('en-IN')}
+                  <span className="text-xs font-medium text-slate-500 dark:text-slate-400">Amount Collected</span>
+                  <p className="font-semibold text-2xl text-emerald-600 dark:text-emerald-400 mt-1">
+                    ₹{overallTotals.amountCollected.toLocaleString('en-IN')}
                   </p>
-                  <span className="text-[11px] text-amber-600 dark:text-amber-400 font-medium">{overallTotals.pendingCount} Pending Payments</span>
+                  <span className="text-[11px] text-emerald-600 dark:text-emerald-400 font-medium">
+                    {overallTotals.paidCount} Deals Paid
+                  </span>
+                </div>
+
+                {/* 5. Amount Need to be Collected */}
+                <div className="p-4 rounded-xl bg-slate-50 dark:bg-zinc-900/40 border border-slate-200/80 dark:border-zinc-800 col-span-2 sm:col-span-1">
+                  <span className="text-xs font-medium text-slate-500 dark:text-slate-400">Amount to Collect</span>
+                  <p className="font-semibold text-2xl text-amber-500 dark:text-amber-400 mt-1">
+                    ₹{overallTotals.amountPending.toLocaleString('en-IN')}
+                  </p>
+                  <span className="text-[11px] text-amber-600 dark:text-amber-400 font-medium">
+                    {overallTotals.pendingCount} Deals Pending
+                  </span>
                 </div>
               </div>
 
@@ -957,8 +993,8 @@ export function CollabManagerModal({ isOpen, onClose }: CollabManagerModalProps)
                         <th className="px-4 py-3 text-right font-semibold">Revenue</th>
                         <th className="px-4 py-3 text-right font-semibold">Spend</th>
                         <th className="px-4 py-3 text-right font-semibold">Net Profit</th>
-                        <th className="px-4 py-3 text-center font-semibold">Pending</th>
-                        <th className="px-4 py-3 text-right font-semibold">Avg Deal</th>
+                        <th className="px-4 py-3 text-right font-semibold">Collected</th>
+                        <th className="px-4 py-3 text-right font-semibold">Pending</th>
                         <th className="px-4 py-3 text-center font-semibold">Action</th>
                       </tr>
                     </thead>
@@ -980,17 +1016,17 @@ export function CollabManagerModal({ isOpen, onClose }: CollabManagerModalProps)
                           <td className="px-4 py-3 text-right font-semibold text-emerald-600 dark:text-emerald-400">
                             ₹{m.totalProfit.toLocaleString('en-IN')}
                           </td>
-                          <td className="px-4 py-3 text-center">
-                            {m.pendingCount > 0 ? (
+                          <td className="px-4 py-3 text-right font-semibold text-emerald-600 dark:text-emerald-400">
+                            ₹{(m.amountCollected || 0).toLocaleString('en-IN')}
+                          </td>
+                          <td className="px-4 py-3 text-right">
+                            {m.amountPending > 0 ? (
                               <span className="px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300 text-[11px] font-medium">
-                                {m.pendingCount}
+                                ₹{m.amountPending.toLocaleString('en-IN')}
                               </span>
                             ) : (
                               <span className="text-slate-400">-</span>
                             )}
-                          </td>
-                          <td className="px-4 py-3 text-right text-slate-600 dark:text-slate-400">
-                            ₹{Math.round(m.avgDealSize).toLocaleString('en-IN')}
                           </td>
                           <td className="px-4 py-3 text-center">
                             <button
@@ -1014,8 +1050,8 @@ export function CollabManagerModal({ isOpen, onClose }: CollabManagerModalProps)
                         <td className="px-4 py-3 text-right text-slate-900 dark:text-slate-100">₹{overallTotals.totalRevenue.toLocaleString('en-IN')}</td>
                         <td className="px-4 py-3 text-right text-rose-600 dark:text-rose-400">₹{overallTotals.totalSpend.toLocaleString('en-IN')}</td>
                         <td className="px-4 py-3 text-right text-emerald-600 dark:text-emerald-400">₹{overallTotals.totalProfit.toLocaleString('en-IN')}</td>
-                        <td className="px-4 py-3 text-center">{overallTotals.pendingCount}</td>
-                        <td className="px-4 py-3 text-right">₹{Math.round(overallTotals.avgDealSize).toLocaleString('en-IN')}</td>
+                        <td className="px-4 py-3 text-right text-emerald-600 dark:text-emerald-400">₹{overallTotals.amountCollected.toLocaleString('en-IN')}</td>
+                        <td className="px-4 py-3 text-right text-amber-600 dark:text-amber-400 font-medium">₹{overallTotals.amountPending.toLocaleString('en-IN')}</td>
                         <td className="px-4 py-3 text-center text-slate-400 text-[11px]">All Months</td>
                       </tr>
                     </tbody>
@@ -1026,8 +1062,9 @@ export function CollabManagerModal({ isOpen, onClose }: CollabManagerModalProps)
           ) : (
             /* VIEW 2: INDIVIDUAL MONTH CRM TABLE */
             <div className="space-y-5 animate-fadeIn">
-              {/* Monthly KPI Cards */}
-              <div className="grid grid-cols-2 lg:grid-cols-4 gap-3.5">
+              {/* Monthly KPI Cards (5 Sections) */}
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3.5">
+                {/* 1. Revenue */}
                 <div className="p-4 rounded-xl bg-slate-50 dark:bg-zinc-900/40 border border-slate-200/80 dark:border-zinc-800">
                   <span className="text-xs font-medium text-slate-500 dark:text-slate-400">Revenue ({monthSummary.monthLabel})</span>
                   <p className="font-semibold text-2xl text-slate-900 dark:text-slate-100 mt-1">
@@ -1036,6 +1073,7 @@ export function CollabManagerModal({ isOpen, onClose }: CollabManagerModalProps)
                   <span className="text-[11px] text-slate-500">{monthSummary.totalCollabs} Deals Recorded</span>
                 </div>
 
+                {/* 2. Spend / Expenses */}
                 <div className="p-4 rounded-xl bg-slate-50 dark:bg-zinc-900/40 border border-slate-200/80 dark:border-zinc-800">
                   <span className="text-xs font-medium text-slate-500 dark:text-slate-400">Spend / Expenses</span>
                   <p className="font-semibold text-2xl text-rose-600 dark:text-rose-400 mt-1">
@@ -1044,20 +1082,37 @@ export function CollabManagerModal({ isOpen, onClose }: CollabManagerModalProps)
                   <span className="text-[11px] text-slate-500">Outsourced &amp; Production</span>
                 </div>
 
+                {/* 3. Net Profit */}
                 <div className="p-4 rounded-xl bg-slate-50 dark:bg-zinc-900/40 border border-slate-200/80 dark:border-zinc-800">
                   <span className="text-xs font-medium text-slate-500 dark:text-slate-400">Net Profit</span>
                   <p className="font-semibold text-2xl text-emerald-600 dark:text-emerald-400 mt-1">
                     ₹{monthSummary.totalProfit.toLocaleString('en-IN')}
                   </p>
-                  <span className="text-[11px] text-emerald-600 dark:text-emerald-400 font-medium">Margin: {monthSummary.totalRevenue > 0 ? Math.round((monthSummary.totalProfit / monthSummary.totalRevenue) * 100) : 0}%</span>
+                  <span className="text-[11px] text-emerald-600 dark:text-emerald-400 font-medium">
+                    Margin: {monthSummary.totalRevenue > 0 ? Math.round((monthSummary.totalProfit / monthSummary.totalRevenue) * 100) : 0}%
+                  </span>
                 </div>
 
+                {/* 4. Amount Collected */}
                 <div className="p-4 rounded-xl bg-slate-50 dark:bg-zinc-900/40 border border-slate-200/80 dark:border-zinc-800">
-                  <span className="text-xs font-medium text-slate-500 dark:text-slate-400">Payment Status</span>
-                  <p className="font-semibold text-2xl text-amber-600 dark:text-amber-400 mt-1">
-                    {monthSummary.pendingCount} Pending
+                  <span className="text-xs font-medium text-slate-500 dark:text-slate-400">Amount Collected</span>
+                  <p className="font-semibold text-2xl text-emerald-600 dark:text-emerald-400 mt-1">
+                    ₹{monthSummary.amountCollected.toLocaleString('en-IN')}
                   </p>
-                  <span className="text-[11px] text-slate-500">Avg Deal: ₹{Math.round(monthSummary.avgDealSize).toLocaleString('en-IN')}</span>
+                  <span className="text-[11px] text-emerald-600 dark:text-emerald-400 font-medium">
+                    {monthSummary.paidCount} Deals Paid
+                  </span>
+                </div>
+
+                {/* 5. Amount Need to be Collected */}
+                <div className="p-4 rounded-xl bg-slate-50 dark:bg-zinc-900/40 border border-slate-200/80 dark:border-zinc-800 col-span-2 sm:col-span-1">
+                  <span className="text-xs font-medium text-slate-500 dark:text-slate-400">Amount to Collect</span>
+                  <p className="font-semibold text-2xl text-amber-500 dark:text-amber-400 mt-1">
+                    ₹{monthSummary.amountPending.toLocaleString('en-IN')}
+                  </p>
+                  <span className="text-[11px] text-amber-600 dark:text-amber-400 font-medium">
+                    {monthSummary.pendingCount} Deals Pending
+                  </span>
                 </div>
               </div>
 

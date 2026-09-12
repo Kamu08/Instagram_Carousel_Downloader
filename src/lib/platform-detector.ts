@@ -10,7 +10,7 @@ export function detectPlatform(inputUrl: string): PlatformType | null {
   if (clean.includes('instagram.com') || clean.includes('instagr.am')) {
     return 'instagram';
   }
-  if (clean.includes('linkedin.com')) {
+  if (clean.includes('linkedin.com') || clean.includes('lnkd.in')) {
     return 'linkedin';
   }
   if (clean.includes('twitter.com') || clean.includes('x.com')) {

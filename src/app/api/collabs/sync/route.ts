@@ -31,6 +31,8 @@ export async function POST(req: NextRequest) {
       const revenue = mItems.reduce((sum, c) => sum + (c.amount || (c.basePay || 0) + (c.bonus || 0)), 0);
       const spend = mItems.reduce((sum, c) => sum + (c.spending || 0), 0);
       const profit = revenue - spend;
+      const collected = mItems.filter((c) => c.status === 'Paid').reduce((sum, c) => sum + (c.amount || (c.basePay || 0) + (c.bonus || 0)), 0);
+      const pendingAmount = mItems.filter((c) => c.status === 'Pending' || c.status === 'Invoiced').reduce((sum, c) => sum + (c.amount || (c.basePay || 0) + (c.bonus || 0)), 0);
       const pendingCount = mItems.filter((c) => c.status === 'Pending' || c.status === 'Invoiced').length;
       const avgDealSize = mItems.length > 0 ? revenue / mItems.length : 0;
       
@@ -46,6 +48,8 @@ export async function POST(req: NextRequest) {
         revenue,
         spend,
         profit,
+        amountCollected: collected,
+        amountPending: pendingAmount,
         pending: pendingCount,
         avgDealSize,
       };

@@ -543,6 +543,9 @@ export function calculateMonthSummary(items: CollabItem[], monthFilter: string):
 
   let totalRevenue = 0;
   let totalSpend = 0;
+  let amountCollected = 0;
+  let amountPending = 0;
+  let paidCount = 0;
   let pendingCount = 0;
 
   for (const item of filtered) {
@@ -551,7 +554,11 @@ export function calculateMonthSummary(items: CollabItem[], monthFilter: string):
       totalRevenue += itemAmount;
       totalSpend += item.spending || 0;
 
-      if (item.status === 'Pending' || item.status === 'Invoiced') {
+      if (item.status === 'Paid') {
+        amountCollected += itemAmount;
+        paidCount += 1;
+      } else if (item.status === 'Pending' || item.status === 'Invoiced') {
+        amountPending += itemAmount;
         pendingCount += 1;
       }
     }
@@ -568,6 +575,9 @@ export function calculateMonthSummary(items: CollabItem[], monthFilter: string):
     totalRevenue,
     totalSpend,
     totalProfit,
+    amountCollected,
+    amountPending,
+    paidCount,
     pendingCount,
     avgDealSize,
     currency: 'INR',

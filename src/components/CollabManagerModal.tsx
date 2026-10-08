@@ -737,6 +737,7 @@ export function CollabManagerModal({ isOpen, onClose }: CollabManagerModalProps)
   };
 
   // Settle specific or all handler payouts
+  // Settle Likes Payouts for Prince, Shivani, Others, or All
   const handleSettleHandlerPayouts = (handlerTarget: 'Prince' | 'Shivani' | 'Others' | 'All', targetMonth = 'all') => {
     let count = 0;
     const updated = collabs.map((c) => {
@@ -767,74 +768,15 @@ export function CollabManagerModal({ isOpen, onClose }: CollabManagerModalProps)
 
     setCollabs(updated);
     saveCollabs(updated);
-    const targetLabel = handlerTarget === 'All' ? 'All Handlers' : handlerTarget;
+    const targetLabel = handlerTarget === 'All' ? 'All Handlers (Prince & Shivani)' : handlerTarget;
     setSyncStatusMsg({
-      text: `⚡ 1-Click Settled: ${count} like payouts for ${targetLabel} marked Paid (Due is now ₹0)!`,
+      text: `✓ 1-Click Settled: ${targetLabel} pending likes amount is now ₹0 (Paid for ${count} posts)!`,
       isError: false,
     });
   };
 
-  // 1-Click Master Settle: Marks ALL Collabs & Handlers as Paid
-  const handleSettleEverything = (targetMonth: string = selectedMonth) => {
-    let settledCount = 0;
-    const todayStr = new Date().toISOString().slice(0, 10);
-    const updated = collabs.map((c) => {
-      const matchMonth = targetMonth === 'all' || c.month === targetMonth;
-      if (!matchMonth) return c;
-
-      const needsDealSettle = c.status !== 'Paid';
-      const hasHandler = c.likeHandler && c.likeHandler.toLowerCase() !== 'none';
-      const needsLikeSettle = hasHandler && c.likePaymentStatus !== 'Paid';
-
-      if (needsDealSettle || needsLikeSettle) {
-        settledCount++;
-        return {
-          ...c,
-          status: 'Paid' as PaymentStatus,
-          paymentReceivedDate: c.paymentReceivedDate || todayStr,
-          likePaymentStatus: hasHandler ? ('Paid' as const) : c.likePaymentStatus,
-          updatedAt: new Date().toISOString(),
-        };
-      }
-      return c;
-    });
-
-    setCollabs(updated);
-    saveCollabs(updated);
-    setSelectedCollabIds([]);
-    setSyncStatusMsg({
-      text: `⚡ 1-Click Complete: All brand deals & handler payouts settled to ₹0 (${settledCount} records updated)!`,
-      isError: false,
-    });
-  };
-
-  // 1-Click Settle All Brand Deals (Paid)
-  const handleSettleAllBrandDeals = (targetMonth: string = selectedMonth) => {
-    let count = 0;
-    const todayStr = new Date().toISOString().slice(0, 10);
-    const updated = collabs.map((c) => {
-      const matchMonth = targetMonth === 'all' || c.month === targetMonth;
-      if (!matchMonth || c.status === 'Paid') return c;
-      count++;
-      return {
-        ...c,
-        status: 'Paid' as PaymentStatus,
-        paymentReceivedDate: c.paymentReceivedDate || todayStr,
-        updatedAt: new Date().toISOString(),
-      };
-    });
-
-    setCollabs(updated);
-    saveCollabs(updated);
-    setSelectedCollabIds([]);
-    setSyncStatusMsg({
-      text: `✓ 1-Click Complete: Marked ${count} brand deals as Paid (Collected)!`,
-      isError: false,
-    });
-  };
-
-  // 1-Click Settle Selected Collabs (Batch)
-  const handleSettleSelectedCollabs = (type: 'all' | 'likes' | 'deals' = 'all') => {
+  // 1-Click Settle Selected Collabs (Batch for Likes or Deal Status)
+  const handleSettleSelectedCollabs = (type: 'likes' | 'deals' = 'likes') => {
     if (selectedCollabIds.length === 0) return;
     const todayStr = new Date().toISOString().slice(0, 10);
     const selectedSet = new Set(selectedCollabIds);
@@ -843,9 +785,9 @@ export function CollabManagerModal({ isOpen, onClose }: CollabManagerModalProps)
     const updated = collabs.map((c) => {
       if (!selectedSet.has(c.id)) return c;
       count++;
-      const nextStatus = (type === 'all' || type === 'deals') ? ('Paid' as PaymentStatus) : c.status;
+      const nextStatus = type === 'deals' ? ('Paid' as PaymentStatus) : c.status;
       const nextLikeStatus =
-        (type === 'all' || type === 'likes') && c.likeHandler && c.likeHandler.toLowerCase() !== 'none'
+        type === 'likes' && c.likeHandler && c.likeHandler.toLowerCase() !== 'none'
           ? ('Paid' as const)
           : c.likePaymentStatus;
 
@@ -862,7 +804,9 @@ export function CollabManagerModal({ isOpen, onClose }: CollabManagerModalProps)
     saveCollabs(updated);
     setSelectedCollabIds([]);
     setSyncStatusMsg({
-      text: `⚡ Successfully settled ${count} selected collaborations to ₹0!`,
+      text: type === 'likes'
+        ? `⚡ Settled likes payouts for ${count} selected collabs to ₹0!`
+        : `✓ Marked ${count} selected brand deals as Paid!`,
       isError: false,
     });
   };
@@ -1235,26 +1179,15 @@ export function CollabManagerModal({ isOpen, onClose }: CollabManagerModalProps)
                   </div>
 
                   <div className="flex items-center gap-2 flex-wrap">
-                    {(overallTotals.amountPending > 0 || overallLikeStats.totalLikesPending > 0) && (
-                      <button
-                        type="button"
-                        onClick={() => handleSettleEverything('all')}
-                        className="px-3 py-1.5 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold text-xs flex items-center gap-1.5 shadow-xs transition-all cursor-pointer self-start sm:self-auto"
-                        title="1-Click: Settle all deals and like handler fees across all months"
-                      >
-                        <Zap className="w-3.5 h-3.5 fill-current" />
-                        <span>⚡ 1-Click Settle All Months</span>
-                      </button>
-                    )}
-
                     {overallLikeStats.totalLikesPending > 0 && (
                       <button
                         type="button"
                         onClick={() => handleSettleHandlerPayouts('All', 'all')}
-                        className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-cyan-300 border border-cyan-500/30 font-semibold text-xs flex items-center gap-1.5 shadow-xs transition-all cursor-pointer self-start sm:self-auto"
+                        className="px-3.5 py-1.5 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold text-xs flex items-center gap-1.5 shadow-sm shadow-cyan-950/40 transition-all cursor-pointer self-start sm:self-auto"
+                        title="1-Click: Clear all pending likes across all months to ₹0"
                       >
-                        <Check className="w-3.5 h-3.5" />
-                        <span>Settle Likes (₹{overallLikeStats.totalLikesPending.toLocaleString('en-IN')})</span>
+                        <Zap className="w-3.5 h-3.5 fill-current" />
+                        <span>⚡ Settle All Likes (₹{overallLikeStats.totalLikesPending.toLocaleString('en-IN')} &rarr; ₹0)</span>
                       </button>
                     )}
                   </div>
@@ -1556,183 +1489,213 @@ export function CollabManagerModal({ isOpen, onClose }: CollabManagerModalProps)
                 </div>
               </div>
 
-              {/* Likes Handlers Summary Bar & Quick-Filter Selector */}
-              <div className="p-3.5 rounded-2xl bg-[#141824] border border-slate-800 flex flex-col md:flex-row items-start md:items-center justify-between gap-3 shadow-xs">
-                <div className="flex items-center gap-2.5">
-                  <div className="w-6 h-6 rounded-md bg-cyan-500/15 text-cyan-400 border border-cyan-500/30 flex items-center justify-center text-xs shadow-xs">
-                    👑
-                  </div>
-                  <div>
-                    <span className="font-bold text-xs text-slate-200">
-                      Likes Handlers ({monthSummary.monthLabel}):
-                    </span>
-                    <span className="text-[11px] text-slate-400 ml-1.5">
-                      {monthLikeStats.totalPostsWithLikes} Posts • Total Likes:{' '}
-                      <span className="text-slate-200 font-semibold font-mono">₹{monthLikeStats.totalLikesCost.toLocaleString('en-IN')}</span>
-                      {' '}• Due:{' '}
-                      {monthLikeStats.totalLikesPending > 0 ? (
-                        <span className="text-amber-400 font-bold font-mono">₹{monthLikeStats.totalLikesPending.toLocaleString('en-IN')}</span>
-                      ) : (
-                        <span className="text-emerald-400 font-semibold">₹0 (All Settled)</span>
-                      )}
-                    </span>
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-1.5 flex-wrap">
-                  <span className="text-[11px] text-slate-400 mr-1">Filter:</span>
-                  {/* All filter */}
-                  <button
-                    type="button"
-                    onClick={() => setLikeFilter('all')}
-                    className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
-                      likeFilter === 'all'
-                        ? 'bg-cyan-500 text-slate-950 font-bold shadow-xs'
-                        : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
-                    }`}
-                  >
-                    All ({monthSummary.totalCollabs})
-                  </button>
-
-                  {/* Prince chip */}
-                  <button
-                    type="button"
-                    onClick={() => setLikeFilter(likeFilter === 'Prince' ? 'all' : 'Prince')}
-                    className={`px-2.5 py-1 rounded-lg text-xs font-semibold flex items-center gap-1.5 border transition-all cursor-pointer ${
-                      likeFilter === 'Prince'
-                        ? 'bg-cyan-500 text-slate-950 border-cyan-400 font-bold shadow-xs'
-                        : 'bg-cyan-500/10 text-cyan-300 border-cyan-500/30 hover:bg-cyan-500/20'
-                    }`}
-                  >
-                    <span>👑 Prince: {monthLikeStats.prince.postsCount}</span>
-                    <span className="font-mono text-[11px] font-bold">
-                      {monthLikeStats.prince.pendingCost > 0
-                        ? `(₹${monthLikeStats.prince.pendingCost.toLocaleString('en-IN')} Due)`
-                        : '(₹0 Due)'}
-                    </span>
-                  </button>
-
-                  {/* Shivani chip */}
-                  <button
-                    type="button"
-                    onClick={() => setLikeFilter(likeFilter === 'Shivani' ? 'all' : 'Shivani')}
-                    className={`px-2.5 py-1 rounded-lg text-xs font-semibold flex items-center gap-1.5 border transition-all cursor-pointer ${
-                      likeFilter === 'Shivani'
-                        ? 'bg-indigo-500 text-white border-indigo-400 font-bold shadow-xs'
-                        : 'bg-indigo-500/10 text-indigo-300 border-indigo-500/30 hover:bg-indigo-500/20'
-                    }`}
-                  >
-                    <span>🌸 Shivani: {monthLikeStats.shivani.postsCount}</span>
-                    <span className="font-mono text-[11px] font-bold">
-                      {monthLikeStats.shivani.pendingCost > 0
-                        ? `(₹${monthLikeStats.shivani.pendingCost.toLocaleString('en-IN')} Due)`
-                        : '(₹0 Due)'}
-                    </span>
-                  </button>
-
-                  {monthLikeStats.others.postsCount > 0 && (
-                    <button
-                      type="button"
-                      onClick={() => setLikeFilter(likeFilter === 'Others' ? 'all' : 'Others')}
-                      className={`px-2.5 py-1 rounded-lg text-xs font-semibold flex items-center gap-1.5 border transition-all cursor-pointer ${
-                        likeFilter === 'Others'
-                          ? 'bg-slate-700 text-white border-slate-600 font-bold shadow-xs'
-                          : 'bg-slate-800 text-slate-300 border-slate-700 hover:bg-slate-700'
-                      }`}
-                    >
-                      <span>👤 Others: {monthLikeStats.others.postsCount}</span>
-                      <span className="font-mono text-[11px] font-bold">
-                        {monthLikeStats.others.pendingCost > 0
-                          ? `(₹${monthLikeStats.others.pendingCost.toLocaleString('en-IN')} Due)`
-                          : '(₹0 Due)'}
-                      </span>
-                    </button>
-                  )}
-
-                  {monthLikeStats.totalLikesPending > 0 && (
-                    <button
-                      type="button"
-                      onClick={() => handleSettleHandlerPayouts('All', selectedMonth)}
-                      className="px-2.5 py-1 rounded-lg bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold text-xs flex items-center gap-1 shadow-xs transition-all cursor-pointer ml-1"
-                      title="Mark all pending handler payouts in this month as Paid"
-                    >
-                      <Check className="w-3 h-3 stroke-[2.5]" />
-                      <span>Settle (₹{monthLikeStats.totalLikesPending.toLocaleString('en-IN')})</span>
-                    </button>
-                  )}
-                </div>
-              </div>
-
-              {/* 1-Click Master Settlement Banner */}
-              {(monthSummary.amountPending > 0 || monthLikeStats.totalLikesPending > 0) ? (
-                <div className="p-3.5 rounded-2xl bg-[#141928] border border-cyan-500/35 flex flex-col md:flex-row items-start md:items-center justify-between gap-3 shadow-md shadow-slate-950/40 animate-fadeIn">
+              {/* Likes & Engagement Handlers: Prince & Shivani Payout System */}
+              <div className="p-4 rounded-2xl bg-[#141824] border border-slate-800 space-y-3.5 shadow-sm">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
                   <div className="flex items-center gap-2.5">
-                    <div className="w-8 h-8 rounded-xl bg-cyan-500/15 text-cyan-400 border border-cyan-500/30 flex items-center justify-center font-bold text-sm shadow-xs shrink-0">
-                      ⚡
+                    <div className="w-8 h-8 rounded-xl bg-cyan-500/15 text-cyan-400 border border-cyan-500/30 flex items-center justify-center text-sm font-bold shadow-xs">
+                      👑
                     </div>
                     <div>
-                      <div className="flex items-center gap-2">
-                        <h4 className="font-bold text-xs text-slate-100">
-                          1-Click Settlement ({monthSummary.monthLabel})
-                        </h4>
-                        <span className="px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-300 border border-amber-500/30 text-[10px] font-bold font-mono">
-                          ₹{(monthSummary.amountPending + monthLikeStats.totalLikesPending).toLocaleString('en-IN')} Total Unsettled
-                        </span>
-                      </div>
-                      <p className="text-[11px] text-slate-400 mt-0.5">
-                        Brand Deals Due: <span className="text-amber-400 font-mono font-semibold">₹{monthSummary.amountPending.toLocaleString('en-IN')}</span> ({monthSummary.pendingCount} deals) • Handler Likes Due: <span className="text-cyan-300 font-mono font-semibold">₹{monthLikeStats.totalLikesPending.toLocaleString('en-IN')}</span> ({monthLikeStats.prince.pendingPostsCount + monthLikeStats.shivani.pendingPostsCount + monthLikeStats.others.pendingPostsCount} posts)
+                      <h4 className="font-bold text-xs text-slate-100 flex items-center gap-2">
+                        <span>Likes &amp; Engagement Handlers ({monthSummary.monthLabel})</span>
+                        {monthLikeStats.totalLikesPending > 0 ? (
+                          <span className="px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-300 border border-amber-500/30 text-[10px] font-bold font-mono">
+                            ₹{monthLikeStats.totalLikesPending.toLocaleString('en-IN')} Pending to Pay
+                          </span>
+                        ) : (
+                          <span className="px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 text-[10px] font-bold">
+                            ✓ ₹0 Due (All Paid)
+                          </span>
+                        )}
+                      </h4>
+                      <p className="text-[11px] text-slate-400">
+                        {monthLikeStats.totalPostsWithLikes} Posts with Likes • Total Cost: <span className="text-slate-200 font-semibold font-mono">₹{monthLikeStats.totalLikesCost.toLocaleString('en-IN')}</span> • Paid: <span className="text-emerald-400 font-mono">₹{monthLikeStats.totalLikesPaid.toLocaleString('en-IN')}</span>
                       </p>
                     </div>
                   </div>
 
-                  <div className="flex items-center gap-2 flex-wrap w-full md:w-auto">
-                    {/* Master Settle Everything */}
+                  {/* 1-Click Settle All Likes (Prince + Shivani) */}
+                  {monthLikeStats.totalLikesPending > 0 ? (
                     <button
                       type="button"
-                      onClick={() => handleSettleEverything(selectedMonth)}
-                      className="px-3.5 py-2 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold text-xs flex items-center gap-1.5 shadow-sm shadow-cyan-950/50 transition-all cursor-pointer grow md:grow-0 justify-center"
-                      title="Mark all brand deal payments and all like handler fees as Paid in 1 click"
+                      onClick={() => handleSettleHandlerPayouts('All', selectedMonth)}
+                      className="px-3.5 py-1.5 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold text-xs flex items-center gap-1.5 shadow-sm shadow-cyan-950/40 transition-all cursor-pointer self-start sm:self-auto"
+                      title="1-Click: Mark all pending likes for Prince and Shivani as Paid (resets pending to ₹0)"
                     >
                       <Zap className="w-3.5 h-3.5 fill-current" />
-                      <span>⚡ 1-Click Settle Everything</span>
+                      <span>⚡ Settle All Likes (₹{monthLikeStats.totalLikesPending.toLocaleString('en-IN')} &rarr; ₹0)</span>
                     </button>
+                  ) : (
+                    <div className="px-3 py-1 rounded-xl bg-emerald-950/30 border border-emerald-500/30 text-emerald-300 text-xs font-semibold flex items-center gap-1.5">
+                      <Check className="w-3.5 h-3.5 stroke-[2.5]" />
+                      <span>All Likes Paid (₹0 Pending)</span>
+                    </div>
+                  )}
+                </div>
 
-                    {/* Settle Likes Only */}
-                    {monthLikeStats.totalLikesPending > 0 && (
-                      <button
-                        type="button"
-                        onClick={() => handleSettleHandlerPayouts('All', selectedMonth)}
-                        className="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-cyan-300 border border-cyan-500/30 font-semibold text-xs flex items-center gap-1.5 transition-all cursor-pointer"
-                        title="Mark only like handlers as Paid"
-                      >
-                        <Check className="w-3.5 h-3.5" />
-                        <span>Settle Likes (₹{monthLikeStats.totalLikesPending.toLocaleString('en-IN')})</span>
-                      </button>
-                    )}
+                {/* 3 Dedicated Handler Cards: Prince, Shivani, Others */}
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1">
+                  {/* Prince Card */}
+                  <div className="p-3.5 rounded-xl bg-[#181d2c] border border-cyan-500/30 flex flex-col justify-between gap-3 shadow-xs">
+                    <div className="flex items-start justify-between">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xl">👑</span>
+                        <div>
+                          <span className="font-bold text-xs text-cyan-300 block">Prince</span>
+                          <span className="text-[11px] text-slate-400">
+                            {monthLikeStats.prince.postsCount} Posts ({monthLikeStats.prince.paidPostsCount} Paid, {monthLikeStats.prince.pendingPostsCount} Due)
+                          </span>
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        {monthLikeStats.prince.pendingCost > 0 ? (
+                          <div>
+                            <span className="font-extrabold text-base text-cyan-300 font-mono block">
+                              ₹{monthLikeStats.prince.pendingCost.toLocaleString('en-IN')}
+                            </span>
+                            <span className="text-[10px] text-amber-400 font-bold uppercase tracking-wider">Pending</span>
+                          </div>
+                        ) : (
+                          <div>
+                            <span className="font-bold text-xs text-emerald-400 flex items-center justify-end gap-1">
+                              <Check className="w-3 h-3 stroke-[2.5]" />
+                              <span>₹0 Due</span>
+                            </span>
+                            <span className="text-[10px] text-emerald-400/70 font-semibold uppercase tracking-wider">Settled</span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
 
-                    {/* Mark Deals Paid Only */}
-                    {monthSummary.amountPending > 0 && (
-                      <button
-                        type="button"
-                        onClick={() => handleSettleAllBrandDeals(selectedMonth)}
-                        className="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-emerald-300 border border-emerald-500/30 font-semibold text-xs flex items-center gap-1.5 transition-all cursor-pointer"
-                        title="Mark all deals as Paid"
-                      >
-                        <Check className="w-3.5 h-3.5" />
-                        <span>Mark Deals Paid (₹{monthSummary.amountPending.toLocaleString('en-IN')})</span>
-                      </button>
-                    )}
+                    <div className="pt-2 border-t border-slate-800 flex items-center justify-between text-[11px]">
+                      <span className="text-slate-400">Total: <b className="text-slate-200 font-mono">₹{monthLikeStats.prince.totalCost.toLocaleString('en-IN')}</b></span>
+                      {monthLikeStats.prince.pendingCost > 0 ? (
+                        <button
+                          type="button"
+                          onClick={() => handleSettleHandlerPayouts('Prince', selectedMonth)}
+                          className="px-2.5 py-1 rounded-lg bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold text-[11px] flex items-center gap-1 transition-all cursor-pointer shadow-xs"
+                          title="Click to clear Prince pending likes to ₹0"
+                        >
+                          <Check className="w-3 h-3 stroke-[2.5]" />
+                          <span>Pay Prince (₹{monthLikeStats.prince.pendingCost.toLocaleString('en-IN')})</span>
+                        </button>
+                      ) : (
+                        <span className="text-emerald-400 text-[11px] font-semibold flex items-center gap-1">
+                          <Check className="w-3 h-3 stroke-[2.5]" />
+                          <span>Paid &amp; Clear</span>
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Shivani Card */}
+                  <div className="p-3.5 rounded-xl bg-[#181d2c] border border-indigo-500/30 flex flex-col justify-between gap-3 shadow-xs">
+                    <div className="flex items-start justify-between">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xl">🌸</span>
+                        <div>
+                          <span className="font-bold text-xs text-indigo-300 block">Shivani</span>
+                          <span className="text-[11px] text-slate-400">
+                            {monthLikeStats.shivani.postsCount} Posts ({monthLikeStats.shivani.paidPostsCount} Paid, {monthLikeStats.shivani.pendingPostsCount} Due)
+                          </span>
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        {monthLikeStats.shivani.pendingCost > 0 ? (
+                          <div>
+                            <span className="font-extrabold text-base text-indigo-300 font-mono block">
+                              ₹{monthLikeStats.shivani.pendingCost.toLocaleString('en-IN')}
+                            </span>
+                            <span className="text-[10px] text-amber-400 font-bold uppercase tracking-wider">Pending</span>
+                          </div>
+                        ) : (
+                          <div>
+                            <span className="font-bold text-xs text-emerald-400 flex items-center justify-end gap-1">
+                              <Check className="w-3 h-3 stroke-[2.5]" />
+                              <span>₹0 Due</span>
+                            </span>
+                            <span className="text-[10px] text-emerald-400/70 font-semibold uppercase tracking-wider">Settled</span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="pt-2 border-t border-slate-800 flex items-center justify-between text-[11px]">
+                      <span className="text-slate-400">Total: <b className="text-slate-200 font-mono">₹{monthLikeStats.shivani.totalCost.toLocaleString('en-IN')}</b></span>
+                      {monthLikeStats.shivani.pendingCost > 0 ? (
+                        <button
+                          type="button"
+                          onClick={() => handleSettleHandlerPayouts('Shivani', selectedMonth)}
+                          className="px-2.5 py-1 rounded-lg bg-indigo-500 hover:bg-indigo-400 text-white font-bold text-[11px] flex items-center gap-1 transition-all cursor-pointer shadow-xs"
+                          title="Click to clear Shivani pending likes to ₹0"
+                        >
+                          <Check className="w-3 h-3 stroke-[2.5]" />
+                          <span>Pay Shivani (₹{monthLikeStats.shivani.pendingCost.toLocaleString('en-IN')})</span>
+                        </button>
+                      ) : (
+                        <span className="text-emerald-400 text-[11px] font-semibold flex items-center gap-1">
+                          <Check className="w-3 h-3 stroke-[2.5]" />
+                          <span>Paid &amp; Clear</span>
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Others Card */}
+                  <div className="p-3.5 rounded-xl bg-[#181d2c] border border-slate-700 flex flex-col justify-between gap-3 shadow-xs">
+                    <div className="flex items-start justify-between">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xl">👤</span>
+                        <div>
+                          <span className="font-bold text-xs text-slate-200 block">Others / New</span>
+                          <span className="text-[11px] text-slate-400">
+                            {monthLikeStats.others.postsCount} Posts ({monthLikeStats.others.paidPostsCount} Paid, {monthLikeStats.others.pendingPostsCount} Due)
+                          </span>
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        {monthLikeStats.others.pendingCost > 0 ? (
+                          <div>
+                            <span className="font-extrabold text-base text-slate-200 font-mono block">
+                              ₹{monthLikeStats.others.pendingCost.toLocaleString('en-IN')}
+                            </span>
+                            <span className="text-[10px] text-amber-400 font-bold uppercase tracking-wider">Pending</span>
+                          </div>
+                        ) : (
+                          <div>
+                            <span className="font-bold text-xs text-emerald-400 flex items-center justify-end gap-1">
+                              <Check className="w-3 h-3 stroke-[2.5]" />
+                              <span>₹0 Due</span>
+                            </span>
+                            <span className="text-[10px] text-emerald-400/70 font-semibold uppercase tracking-wider">Settled</span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="pt-2 border-t border-slate-800 flex items-center justify-between text-[11px]">
+                      <span className="text-slate-400">Total: <b className="text-slate-200 font-mono">₹{monthLikeStats.others.totalCost.toLocaleString('en-IN')}</b></span>
+                      {monthLikeStats.others.pendingCost > 0 ? (
+                        <button
+                          type="button"
+                          onClick={() => handleSettleHandlerPayouts('Others', selectedMonth)}
+                          className="px-2.5 py-1 rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-100 font-bold text-[11px] flex items-center gap-1 transition-all cursor-pointer shadow-xs"
+                          title="Click to clear Others pending likes to ₹0"
+                        >
+                          <Check className="w-3 h-3 stroke-[2.5]" />
+                          <span>Pay Others (₹{monthLikeStats.others.pendingCost.toLocaleString('en-IN')})</span>
+                        </button>
+                      ) : (
+                        <span className="text-emerald-400 text-[11px] font-semibold flex items-center gap-1">
+                          <Check className="w-3 h-3 stroke-[2.5]" />
+                          <span>Paid &amp; Clear</span>
+                        </span>
+                      )}
+                    </div>
                   </div>
                 </div>
-              ) : (
-                <div className="px-4 py-2.5 rounded-xl bg-emerald-950/20 border border-emerald-500/30 flex items-center justify-between text-xs animate-fadeIn">
-                  <div className="flex items-center gap-2 text-emerald-400 font-semibold">
-                    <Check className="w-4 h-4 stroke-[2.5]" />
-                    <span>All deals and like handler fees for {monthSummary.monthLabel} are 100% Settled (₹0 Due)!</span>
-                  </div>
-                  <span className="text-[11px] text-emerald-400/80 font-mono font-semibold">✓ Settled</span>
-                </div>
-              )}
+              </div>
 
               {/* Table Toolbar */}
               <div className="flex flex-col sm:flex-row items-center justify-between gap-3">
@@ -2099,12 +2062,12 @@ export function CollabManagerModal({ isOpen, onClose }: CollabManagerModalProps)
                   <div className="flex items-center gap-2 flex-wrap">
                     <button
                       type="button"
-                      onClick={() => handleSettleSelectedCollabs('all')}
-                      className="px-3 py-1.5 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold text-xs flex items-center gap-1.5 shadow-sm transition-all cursor-pointer"
-                      title="Settle both deal payment and like handler payouts to ₹0 for selected"
+                      onClick={() => handleSettleSelectedCollabs('likes')}
+                      className="px-3 py-1.5 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold text-xs flex items-center gap-1.5 shadow-sm shadow-cyan-950/40 transition-all cursor-pointer"
+                      title="Settle like handler payouts to ₹0 for selected"
                     >
                       <Zap className="w-3.5 h-3.5 fill-current" />
-                      <span>⚡ 1-Click Settle Selected</span>
+                      <span>⚡ Settle Likes (Selected &rarr; ₹0)</span>
                     </button>
 
                     <button

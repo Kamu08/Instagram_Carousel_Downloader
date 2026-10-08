@@ -21,6 +21,12 @@ export type WorkStatus = 'Completed' | 'In Progress' | 'Scheduled' | 'Draft';
 export type PaymentMode = 'UPI' | 'Bank Transfer' | 'Stripe' | 'PayPal' | 'Other';
 export type Currency = 'INR' | 'USD';
 
+export interface LikeHandlerEntry {
+  handler: 'Prince' | 'Shivani' | string;
+  cost: number;
+  status: 'Paid' | 'Pending';
+}
+
 export interface CollabItem {
   id: string;
   month: string; // "YYYY-MM", e.g., "2026-07"
@@ -35,9 +41,10 @@ export interface CollabItem {
   amount: number; // Total Amount = basePay + bonus
   spending: number; // Spend
   netProfit: number; // amount - spending
-  likeHandler?: string; // "Prince" | "Shivani" | "Other" | "None"
-  likeCost?: number; // Like / Engagement cost or payout (defaults to spending)
-  likePaymentStatus?: 'Paid' | 'Pending'; // Engagement handler payout status
+  likeHandler?: string; // Legacy field e.g. "Prince", "Prince & Shivani", or "None"
+  likeCost?: number; // Legacy total likes cost
+  likePaymentStatus?: 'Paid' | 'Pending'; // Legacy overall status
+  likeHandlers?: LikeHandlerEntry[]; // Multi-handler list: Prince, Shivani, Others
   invoiceSent: InvoiceStatus;
   status: PaymentStatus;
   paymentReceivedDate?: string; // "YYYY-MM-DD" or "DD-MM-YYYY"

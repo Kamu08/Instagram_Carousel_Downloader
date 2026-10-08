@@ -578,6 +578,47 @@ export function getUniqueMonths(items: CollabItem[]): string[] {
   return Array.from(months).sort((a, b) => b.localeCompare(a));
 }
 
+export function parseItemLikeHandlers(item: CollabItem): { handler: string; cost: number; status: 'Paid' | 'Pending' }[] {
+  if (item.likeHandlers && Array.isArray(item.likeHandlers) && item.likeHandlers.length > 0) {
+    return item.likeHandlers.filter((h) => h.handler && h.handler.trim() && h.handler.toLowerCase() !== 'none');
+  }
+
+  if (!item.likeHandler || item.likeHandler.trim().toLowerCase() === 'none') {
+    return [];
+  }
+
+  const rawHandler = item.likeHandler.trim();
+  const totalCost = item.likeCost !== undefined && item.likeCost !== null ? Number(item.likeCost) : Number(item.spending || 0);
+  const isPaid = item.likePaymentStatus === 'Paid';
+  const status: 'Paid' | 'Pending' = isPaid ? 'Paid' : 'Pending';
+
+  const lower = rawHandler.toLowerCase();
+
+  // If compound handler contains both Prince and Shivani
+  if (lower.includes('prince') && lower.includes('shivani')) {
+    const half = Math.round(totalCost / 2);
+    return [
+      { handler: 'Prince', cost: half, status },
+      { handler: 'Shivani', cost: totalCost - half, status },
+    ];
+  }
+
+  // If separated by &, +, or comma
+  if (rawHandler.includes('&') || rawHandler.includes(',') || rawHandler.includes('+')) {
+    const parts = rawHandler.split(/[&,+]/).map((p) => p.trim()).filter(Boolean);
+    if (parts.length > 1) {
+      const perCost = Math.round(totalCost / parts.length);
+      return parts.map((name, i) => ({
+        handler: name,
+        cost: i === parts.length - 1 ? totalCost - perCost * (parts.length - 1) : perCost,
+        status,
+      }));
+    }
+  }
+
+  return [{ handler: rawHandler, cost: totalCost, status }];
+}
+
 export function calculateMonthSummary(items: CollabItem[], monthFilter: string): CollabMonthSummary {
   const filtered = monthFilter === 'all' ? items : items.filter((i) => i.month === monthFilter);
 
@@ -592,7 +633,12 @@ export function calculateMonthSummary(items: CollabItem[], monthFilter: string):
     if (item.status !== 'Cancelled') {
       const itemAmount = (item.basePay || 0) + (item.bonus || 0) || item.amount || 0;
       totalRevenue += itemAmount;
-      totalSpend += item.spending || 0;
+
+      // Item spend calculation: item.spending or sum of likeHandlers if spending is lower
+      const handlers = parseItemLikeHandlers(item);
+      const itemLikeCost = handlers.reduce((sum, h) => sum + Number(h.cost || 0), 0);
+      const effectiveSpend = Math.max(Number(item.spending || 0), itemLikeCost);
+      totalSpend += effectiveSpend;
 
       if (item.status === 'Paid') {
         amountCollected += itemAmount;
@@ -650,36 +696,39 @@ export function calculateLikeHandlersStats(items: CollabItem[], monthFilter = 'a
   let totalLikesPaid = 0;
 
   for (const item of filtered) {
-    if (item.likeHandler && item.likeHandler.trim() && item.likeHandler.toLowerCase() !== 'none') {
-      const handlerName = item.likeHandler.trim();
-      const cost = item.likeCost !== undefined && item.likeCost !== null ? Number(item.likeCost) : Number(item.spending || 0);
-      const isPaid = item.likePaymentStatus === 'Paid';
+    const entries = parseItemLikeHandlers(item);
 
-      if (!statsMap[handlerName]) {
-        statsMap[handlerName] = {
-          postsCount: 0,
-          totalCost: 0,
-          pendingCost: 0,
-          paidCost: 0,
-          pendingPostsCount: 0,
-          paidPostsCount: 0,
-        };
-      }
-      statsMap[handlerName].postsCount += 1;
-      statsMap[handlerName].totalCost += cost;
-
-      if (isPaid) {
-        statsMap[handlerName].paidCost += cost;
-        statsMap[handlerName].paidPostsCount += 1;
-        totalLikesPaid += cost;
-      } else {
-        statsMap[handlerName].pendingCost += cost;
-        statsMap[handlerName].pendingPostsCount += 1;
-        totalLikesPending += cost;
-      }
-
+    if (entries.length > 0) {
       totalPostsWithLikes += 1;
-      totalLikesCost += cost;
+      for (const entry of entries) {
+        const handlerName = entry.handler.trim();
+        const cost = Number(entry.cost || 0);
+        const isPaid = entry.status === 'Paid';
+
+        if (!statsMap[handlerName]) {
+          statsMap[handlerName] = {
+            postsCount: 0,
+            totalCost: 0,
+            pendingCost: 0,
+            paidCost: 0,
+            pendingPostsCount: 0,
+            paidPostsCount: 0,
+          };
+        }
+        statsMap[handlerName].postsCount += 1;
+        statsMap[handlerName].totalCost += cost;
+        totalLikesCost += cost;
+
+        if (isPaid) {
+          statsMap[handlerName].paidCost += cost;
+          statsMap[handlerName].paidPostsCount += 1;
+          totalLikesPaid += cost;
+        } else {
+          statsMap[handlerName].pendingCost += cost;
+          statsMap[handlerName].pendingPostsCount += 1;
+          totalLikesPending += cost;
+        }
+      }
     }
   }
 
@@ -690,14 +739,14 @@ export function calculateLikeHandlersStats(items: CollabItem[], monthFilter = 'a
 
   for (const [name, data] of Object.entries(statsMap)) {
     const lower = name.toLowerCase();
-    if (lower.includes('prince')) {
+    if (lower === 'prince' || (lower.includes('prince') && !lower.includes('shivani'))) {
       princeStat.postsCount += data.postsCount;
       princeStat.totalCost += data.totalCost;
       princeStat.pendingCost += data.pendingCost;
       princeStat.paidCost += data.paidCost;
       princeStat.pendingPostsCount += data.pendingPostsCount;
       princeStat.paidPostsCount += data.paidPostsCount;
-    } else if (lower.includes('shivani')) {
+    } else if (lower === 'shivani' || (lower.includes('shivani') && !lower.includes('prince'))) {
       shivaniStat.postsCount += data.postsCount;
       shivaniStat.totalCost += data.totalCost;
       shivaniStat.pendingCost += data.pendingCost;

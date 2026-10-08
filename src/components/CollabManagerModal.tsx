@@ -41,6 +41,7 @@ import {
   GoogleSheetSyncConfig,
   CollabMonthSummary,
   LikeHandlerStat,
+  LikeHandlerEntry,
 } from '@/lib/collab-types';
 import {
   getSavedCollabs,
@@ -51,6 +52,7 @@ import {
   calculateMonthSummary,
   calculateAllMonthsSummary,
   calculateLikeHandlersStats,
+  parseItemLikeHandlers,
   formatMonthLabel,
   getMonthName,
   getCurrentMonthKey,
@@ -430,10 +432,21 @@ export function CollabManagerModal({ isOpen, onClose }: CollabManagerModalProps)
   const [formBasePay, setFormBasePay] = useState<number>(3000);
   const [formBonus, setFormBonus] = useState<number>(0);
   const [formSpending, setFormSpending] = useState<number>(0);
-  const [formLikeHandlerType, setFormLikeHandlerType] = useState<'None' | 'Prince' | 'Shivani' | 'Other'>('None');
-  const [formCustomHandlerName, setFormCustomHandlerName] = useState('');
-  const [formLikeCost, setFormLikeCost] = useState<number>(0);
-  const [formLikePaymentStatus, setFormLikePaymentStatus] = useState<'Paid' | 'Pending'>('Pending');
+  
+  // Multi-Handler Form State (Prince, Shivani, Other)
+  const [formPrinceEnabled, setFormPrinceEnabled] = useState(false);
+  const [formPrinceCost, setFormPrinceCost] = useState<number>(300);
+  const [formPrinceStatus, setFormPrinceStatus] = useState<'Paid' | 'Pending'>('Pending');
+
+  const [formShivaniEnabled, setFormShivaniEnabled] = useState(false);
+  const [formShivaniCost, setFormShivaniCost] = useState<number>(200);
+  const [formShivaniStatus, setFormShivaniStatus] = useState<'Paid' | 'Pending'>('Pending');
+
+  const [formOtherEnabled, setFormOtherEnabled] = useState(false);
+  const [formOtherName, setFormOtherName] = useState('');
+  const [formOtherCost, setFormOtherCost] = useState<number>(150);
+  const [formOtherStatus, setFormOtherStatus] = useState<'Paid' | 'Pending'>('Pending');
+
   const [formInvoiceSent, setFormInvoiceSent] = useState<InvoiceStatus>('No');
   const [formStatus, setFormStatus] = useState<PaymentStatus>('Pending');
   const [formPaymentDate, setFormPaymentDate] = useState(() => {
@@ -500,19 +513,31 @@ export function CollabManagerModal({ isOpen, onClose }: CollabManagerModalProps)
   const filteredCollabs = useMemo(() => {
     return collabs.filter((c) => {
       const matchMonth = selectedMonth === 'all' || c.month === selectedMonth;
+      
+      const handlers = parseItemLikeHandlers(c);
+      const handlerNames = handlers.map((h) => h.handler).join(' ');
+
       const matchSearch =
         searchQuery === '' ||
         c.brandName.toLowerCase().includes(searchQuery.toLowerCase()) ||
         (c.campaign && c.campaign.toLowerCase().includes(searchQuery.toLowerCase())) ||
         (c.likeHandler && c.likeHandler.toLowerCase().includes(searchQuery.toLowerCase())) ||
+        handlerNames.toLowerCase().includes(searchQuery.toLowerCase()) ||
         (c.notes && c.notes.toLowerCase().includes(searchQuery.toLowerCase()));
+
       const matchStatus = statusFilter === 'all' || c.status === statusFilter;
+
+      const hasPrince = handlers.some((h) => h.handler.toLowerCase().includes('prince'));
+      const hasShivani = handlers.some((h) => h.handler.toLowerCase().includes('shivani'));
+      const hasOther = handlers.some((h) => !h.handler.toLowerCase().includes('prince') && !h.handler.toLowerCase().includes('shivani'));
+      const hasNone = handlers.length === 0;
+
       const matchLike =
         likeFilter === 'all' ||
-        (likeFilter === 'Prince' && c.likeHandler?.toLowerCase().includes('prince')) ||
-        (likeFilter === 'Shivani' && c.likeHandler?.toLowerCase().includes('shivani')) ||
-        (likeFilter === 'Others' && c.likeHandler && !c.likeHandler.toLowerCase().includes('prince') && !c.likeHandler.toLowerCase().includes('shivani') && c.likeHandler.toLowerCase() !== 'none') ||
-        (likeFilter === 'None' && (!c.likeHandler || c.likeHandler.toLowerCase() === 'none'));
+        (likeFilter === 'Prince' && hasPrince) ||
+        (likeFilter === 'Shivani' && hasShivani) ||
+        (likeFilter === 'Others' && hasOther) ||
+        (likeFilter === 'None' && hasNone);
 
       return matchMonth && matchSearch && matchStatus && matchLike;
     });
@@ -553,10 +578,21 @@ export function CollabManagerModal({ isOpen, onClose }: CollabManagerModalProps)
     setFormBasePay(3000);
     setFormBonus(0);
     setFormSpending(0);
-    setFormLikeHandlerType('None');
-    setFormCustomHandlerName('');
-    setFormLikeCost(0);
-    setFormLikePaymentStatus('Pending');
+
+    // Reset multi-handlers
+    setFormPrinceEnabled(false);
+    setFormPrinceCost(300);
+    setFormPrinceStatus('Pending');
+
+    setFormShivaniEnabled(false);
+    setFormShivaniCost(200);
+    setFormShivaniStatus('Pending');
+
+    setFormOtherEnabled(false);
+    setFormOtherName('');
+    setFormOtherCost(150);
+    setFormOtherStatus('Pending');
+
     setFormInvoiceSent('No');
     setFormStatus('Pending');
     
@@ -581,24 +617,55 @@ export function CollabManagerModal({ isOpen, onClose }: CollabManagerModalProps)
     setFormDate(item.scheduledDate || '');
     setFormBasePay(item.basePay || 0);
     setFormBonus(item.bonus || 0);
-    setFormSpending(item.spending || 0);
 
-    // Parse like handler
-    if (item.likeHandler && item.likeHandler.toLowerCase().includes('prince')) {
-      setFormLikeHandlerType('Prince');
-      setFormCustomHandlerName('');
-    } else if (item.likeHandler && item.likeHandler.toLowerCase().includes('shivani')) {
-      setFormLikeHandlerType('Shivani');
-      setFormCustomHandlerName('');
-    } else if (item.likeHandler && item.likeHandler.toLowerCase() !== 'none') {
-      setFormLikeHandlerType('Other');
-      setFormCustomHandlerName(item.likeHandler);
-    } else {
-      setFormLikeHandlerType('None');
-      setFormCustomHandlerName('');
+    const handlers = parseItemLikeHandlers(item);
+    const totalLikesFee = handlers.reduce((sum, h) => sum + Number(h.cost || 0), 0);
+    const effectiveSpend = Math.max(Number(item.spending || 0), totalLikesFee);
+    setFormSpending(effectiveSpend);
+
+    let hasPrince = false;
+    let princeCost = 300;
+    let princeStatus: 'Paid' | 'Pending' = 'Pending';
+
+    let hasShivani = false;
+    let shivaniCost = 200;
+    let shivaniStatus: 'Paid' | 'Pending' = 'Pending';
+
+    let hasOther = false;
+    let otherName = '';
+    let otherCost = 150;
+    let otherStatus: 'Paid' | 'Pending' = 'Pending';
+
+    for (const h of handlers) {
+      const lower = (h.handler || '').toLowerCase();
+      if (lower.includes('prince')) {
+        hasPrince = true;
+        princeCost = h.cost;
+        princeStatus = h.status || 'Pending';
+      } else if (lower.includes('shivani')) {
+        hasShivani = true;
+        shivaniCost = h.cost;
+        shivaniStatus = h.status || 'Pending';
+      } else {
+        hasOther = true;
+        otherName = h.handler;
+        otherCost = h.cost;
+        otherStatus = h.status || 'Pending';
+      }
     }
-    setFormLikeCost(item.likeCost !== undefined ? item.likeCost : (item.spending || 0));
-    setFormLikePaymentStatus(item.likePaymentStatus || 'Pending');
+
+    setFormPrinceEnabled(hasPrince);
+    setFormPrinceCost(princeCost);
+    setFormPrinceStatus(princeStatus);
+
+    setFormShivaniEnabled(hasShivani);
+    setFormShivaniCost(shivaniCost);
+    setFormShivaniStatus(shivaniStatus);
+
+    setFormOtherEnabled(hasOther);
+    setFormOtherName(otherName);
+    setFormOtherCost(otherCost);
+    setFormOtherStatus(otherStatus);
 
     setFormInvoiceSent(item.invoiceSent || 'Yes');
     setFormStatus(item.status || 'Paid');
@@ -616,16 +683,27 @@ export function CollabManagerModal({ isOpen, onClose }: CollabManagerModalProps)
 
     const monthKey = formDate ? formDate.slice(0, 7) : selectedMonth !== 'all' ? selectedMonth : '2026-09';
     const totalAmount = Number(formBasePay || 0) + Number(formBonus || 0);
-    const spend = Number(formSpending || 0);
+
+    // Build multi-handlers list
+    const handlers: LikeHandlerEntry[] = [];
+    if (formPrinceEnabled) {
+      handlers.push({ handler: 'Prince', cost: Number(formPrinceCost || 0), status: formPrinceStatus });
+    }
+    if (formShivaniEnabled) {
+      handlers.push({ handler: 'Shivani', cost: Number(formShivaniCost || 0), status: formShivaniStatus });
+    }
+    if (formOtherEnabled && formOtherName.trim()) {
+      handlers.push({ handler: formOtherName.trim(), cost: Number(formOtherCost || 0), status: formOtherStatus });
+    }
+
+    const totalLikesFee = handlers.reduce((s, h) => s + Number(h.cost || 0), 0);
+    const finalLikeHandler = handlers.length > 0 ? handlers.map((h) => h.handler).join(' & ') : 'None';
+    const finalLikePaymentStatus: 'Paid' | 'Pending' =
+      handlers.length > 0 && handlers.every((h) => h.status === 'Paid') ? 'Paid' : 'Pending';
+
+    // Spending is always at least the total likes cost
+    const spend = Math.max(Number(formSpending || 0), totalLikesFee);
     const net = totalAmount - spend;
-
-    let finalHandler = 'None';
-    if (formLikeHandlerType === 'Prince') finalHandler = 'Prince';
-    else if (formLikeHandlerType === 'Shivani') finalHandler = 'Shivani';
-    else if (formLikeHandlerType === 'Other') finalHandler = formCustomHandlerName.trim() || 'New Guy';
-
-    const finalLikeCost = formLikeHandlerType !== 'None' ? Number(formLikeCost || spend) : 0;
-    const finalLikePaymentStatus = formLikeHandlerType !== 'None' ? formLikePaymentStatus : undefined;
 
     if (editingItem) {
       const updated = collabs.map((c) =>
@@ -644,9 +722,10 @@ export function CollabManagerModal({ isOpen, onClose }: CollabManagerModalProps)
               amount: totalAmount,
               spending: spend,
               netProfit: net,
-              likeHandler: finalHandler,
-              likeCost: finalLikeCost,
+              likeHandler: finalLikeHandler,
+              likeCost: totalLikesFee,
               likePaymentStatus: finalLikePaymentStatus,
+              likeHandlers: handlers,
               invoiceSent: formInvoiceSent,
               status: formStatus,
               paymentReceivedDate: formPaymentDate || undefined,
@@ -675,9 +754,10 @@ export function CollabManagerModal({ isOpen, onClose }: CollabManagerModalProps)
         amount: totalAmount,
         spending: spend,
         netProfit: net,
-        likeHandler: finalHandler,
-        likeCost: finalLikeCost,
+        likeHandler: finalLikeHandler,
+        likeCost: totalLikesFee,
         likePaymentStatus: finalLikePaymentStatus,
+        likeHandlers: handlers,
         invoiceSent: formInvoiceSent,
         status: formStatus,
         paymentReceivedDate: formPaymentDate || undefined,
@@ -721,45 +801,69 @@ export function CollabManagerModal({ isOpen, onClose }: CollabManagerModalProps)
     saveCollabs(updated);
   };
 
-  const handleToggleLikePaymentStatus = (item: CollabItem) => {
-    const nextStatus: 'Paid' | 'Pending' = item.likePaymentStatus === 'Paid' ? 'Pending' : 'Paid';
-    const updated = collabs.map((c) =>
-      c.id === item.id
-        ? {
-            ...c,
-            likePaymentStatus: nextStatus,
-            updatedAt: new Date().toISOString(),
-          }
-        : c
-    );
+  // Toggle a specific handler's status (Prince / Shivani / Others) on a single post
+  const handleToggleHandlerStatus = (item: CollabItem, targetHandlerName: string) => {
+    const updated = collabs.map((c) => {
+      if (c.id !== item.id) return c;
+
+      const handlers = parseItemLikeHandlers(c).map((h) => {
+        const isTarget = h.handler.toLowerCase().includes(targetHandlerName.toLowerCase());
+        if (isTarget) {
+          const nextStatus: 'Paid' | 'Pending' = h.status === 'Paid' ? 'Pending' : 'Paid';
+          return { ...h, status: nextStatus };
+        }
+        return h;
+      });
+
+      const allPaid = handlers.length > 0 && handlers.every((h) => h.status === 'Paid');
+      return {
+        ...c,
+        likeHandlers: handlers,
+        likePaymentStatus: allPaid ? ('Paid' as const) : ('Pending' as const),
+        updatedAt: new Date().toISOString(),
+      };
+    });
+
     setCollabs(updated);
     saveCollabs(updated);
   };
 
-  // Settle specific or all handler payouts
   // Settle Likes Payouts for Prince, Shivani, Others, or All
   const handleSettleHandlerPayouts = (handlerTarget: 'Prince' | 'Shivani' | 'Others' | 'All', targetMonth = 'all') => {
     let count = 0;
     const updated = collabs.map((c) => {
       const matchMonth = targetMonth === 'all' || c.month === targetMonth;
-      if (!matchMonth || !c.likeHandler || c.likeHandler.toLowerCase() === 'none') {
-        return c;
-      }
-      const isPrince = c.likeHandler.toLowerCase().includes('prince');
-      const isShivani = c.likeHandler.toLowerCase().includes('shivani');
-      const isOther = !isPrince && !isShivani;
+      if (!matchMonth) return c;
 
-      const matchesHandler =
-        handlerTarget === 'All' ||
-        (handlerTarget === 'Prince' && isPrince) ||
-        (handlerTarget === 'Shivani' && isShivani) ||
-        (handlerTarget === 'Others' && isOther);
+      let hasChanged = false;
+      const initialHandlers = parseItemLikeHandlers(c);
+      if (initialHandlers.length === 0) return c;
 
-      if (matchesHandler && c.likePaymentStatus !== 'Paid') {
-        count++;
+      const handlers = initialHandlers.map((h) => {
+        const isPrince = h.handler.toLowerCase().includes('prince');
+        const isShivani = h.handler.toLowerCase().includes('shivani');
+        const isOther = !isPrince && !isShivani;
+
+        const matches =
+          handlerTarget === 'All' ||
+          (handlerTarget === 'Prince' && isPrince) ||
+          (handlerTarget === 'Shivani' && isShivani) ||
+          (handlerTarget === 'Others' && isOther);
+
+        if (matches && h.status !== 'Paid') {
+          hasChanged = true;
+          count++;
+          return { ...h, status: 'Paid' as const };
+        }
+        return h;
+      });
+
+      if (hasChanged || (!c.likeHandlers && initialHandlers.length > 0)) {
+        const allPaid = handlers.length > 0 && handlers.every((h) => h.status === 'Paid');
         return {
           ...c,
-          likePaymentStatus: 'Paid' as const,
+          likeHandlers: handlers,
+          likePaymentStatus: allPaid ? ('Paid' as const) : ('Pending' as const),
           updatedAt: new Date().toISOString(),
         };
       }
@@ -770,7 +874,7 @@ export function CollabManagerModal({ isOpen, onClose }: CollabManagerModalProps)
     saveCollabs(updated);
     const targetLabel = handlerTarget === 'All' ? 'All Handlers (Prince & Shivani)' : handlerTarget;
     setSyncStatusMsg({
-      text: `✓ 1-Click Settled: ${targetLabel} pending likes amount is now ₹0 (Paid for ${count} posts)!`,
+      text: `✓ 1-Click Settled: ${targetLabel} pending likes amount is now ₹0 (Paid for ${count} entries)!`,
       isError: false,
     });
   };
@@ -1774,16 +1878,12 @@ export function CollabManagerModal({ isOpen, onClose }: CollabManagerModalProps)
                         filteredCollabs.map((item) => {
                           const isPaid = item.status === 'Paid';
                           const totalAmt = (item.basePay || 0) + (item.bonus || 0) || item.amount || 0;
-                          const net = totalAmt - (item.spending || 0);
+                          const itemHandlers = parseItemLikeHandlers(item);
+                          const itemLikeCost = itemHandlers.reduce((sum, h) => sum + Number(h.cost || 0), 0);
+                          const effectiveSpend = Math.max(Number(item.spending || 0), itemLikeCost);
+                          const net = totalAmt - effectiveSpend;
                           const isExpanded = expandedRowId === item.id;
                           const isSelected = selectedCollabIds.includes(item.id);
-
-                          const isPrince = item.likeHandler?.toLowerCase().includes('prince');
-                          const isShivani = item.likeHandler?.toLowerCase().includes('shivani');
-                          const hasOtherHandler = item.likeHandler && item.likeHandler.toLowerCase() !== 'none' && !isPrince && !isShivani;
-                          const hasHandler = isPrince || isShivani || hasOtherHandler;
-                          const isHandlerPaid = item.likePaymentStatus === 'Paid';
-                          const itemLikeCost = item.likeCost !== undefined ? item.likeCost : (item.spending || 0);
 
                           return (
                             <React.Fragment key={item.id}>
@@ -1860,7 +1960,7 @@ export function CollabManagerModal({ isOpen, onClose }: CollabManagerModalProps)
 
                                 {/* Spend */}
                                 <td className="px-4 py-3.5 text-right text-xs text-slate-300 font-mono">
-                                  {item.spending ? `₹${item.spending.toLocaleString('en-IN')}` : '-'}
+                                  {effectiveSpend ? `₹${effectiveSpend.toLocaleString('en-IN')}` : '-'}
                                 </td>
 
                                 {/* Net Profit */}
@@ -1868,48 +1968,56 @@ export function CollabManagerModal({ isOpen, onClose }: CollabManagerModalProps)
                                   ₹{net.toLocaleString('en-IN')}
                                 </td>
 
-                                {/* Likes Handler & Payout (1-Click Payout Toggle) */}
+                                {/* Likes Handler & Payout (Multi-handler 1-Click Payout Toggles) */}
                                 <td className="px-4 py-3.5 text-center">
-                                  {hasHandler ? (
-                                    <div className="flex flex-col items-center gap-1">
-                                      {/* Handler Tag */}
-                                      {isPrince ? (
-                                        <span className="px-2 py-0.5 rounded-md text-[11px] font-semibold bg-cyan-500/15 text-cyan-300 border border-cyan-500/30 inline-flex items-center gap-1 shadow-xs">
-                                          👑 Prince
-                                        </span>
-                                      ) : isShivani ? (
-                                        <span className="px-2 py-0.5 rounded-md text-[11px] font-semibold bg-indigo-500/15 text-indigo-300 border border-indigo-500/30 inline-flex items-center gap-1 shadow-xs">
-                                          🌸 Shivani
-                                        </span>
-                                      ) : (
-                                        <span className="px-2 py-0.5 rounded-md text-[11px] font-semibold bg-slate-800 text-slate-300 border border-slate-700 inline-flex items-center gap-1 shadow-xs">
-                                          👤 {item.likeHandler}
-                                        </span>
-                                      )}
+                                  {itemHandlers.length > 0 ? (
+                                    <div className="flex flex-col items-center gap-1.5">
+                                      {itemHandlers.map((h, idx) => {
+                                        const isP = h.handler.toLowerCase().includes('prince');
+                                        const isS = h.handler.toLowerCase().includes('shivani');
+                                        const isPaidHandler = h.status === 'Paid';
 
-                                      {/* 1-Tap Payout Toggle Button */}
-                                      <button
-                                        type="button"
-                                        onClick={() => handleToggleLikePaymentStatus(item)}
-                                        className={`px-2 py-0.5 rounded-full text-[10px] font-semibold inline-flex items-center gap-1 transition-all cursor-pointer shadow-xs ${
-                                          isHandlerPaid
-                                            ? 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 hover:bg-emerald-500/25'
-                                            : 'bg-amber-500/15 text-amber-300 border border-amber-500/30 hover:bg-amber-500/25'
-                                        }`}
-                                        title="Click to toggle handler payout (Paid / Due)"
-                                      >
-                                        {isHandlerPaid ? (
-                                          <>
-                                            <Check className="w-2.5 h-2.5 stroke-[2.5]" />
-                                            <span>Paid ₹{itemLikeCost.toLocaleString('en-IN')}</span>
-                                          </>
-                                        ) : (
-                                          <>
-                                            <Clock className="w-2.5 h-2.5" />
-                                            <span className="font-bold">Due: ₹{itemLikeCost.toLocaleString('en-IN')}</span>
-                                          </>
-                                        )}
-                                      </button>
+                                        return (
+                                          <div key={idx} className="flex items-center gap-1">
+                                            {/* Handler Name Badge */}
+                                            <span
+                                              className={`px-1.5 py-0.5 rounded text-[10px] font-semibold border ${
+                                                isP
+                                                  ? 'bg-cyan-500/15 text-cyan-300 border-cyan-500/30'
+                                                  : isS
+                                                  ? 'bg-indigo-500/15 text-indigo-300 border-indigo-500/30'
+                                                  : 'bg-slate-800 text-slate-300 border-slate-700'
+                                              }`}
+                                            >
+                                              {isP ? '👑 Prince' : isS ? '🌸 Shivani' : `👤 ${h.handler}`}
+                                            </span>
+
+                                            {/* 1-Tap Toggle Button */}
+                                            <button
+                                              type="button"
+                                              onClick={() => handleToggleHandlerStatus(item, h.handler)}
+                                              className={`px-1.5 py-0.5 rounded-md text-[10px] font-semibold inline-flex items-center gap-0.5 transition-all cursor-pointer shadow-xs ${
+                                                isPaidHandler
+                                                  ? 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 hover:bg-emerald-500/25'
+                                                  : 'bg-amber-500/15 text-amber-300 border border-amber-500/30 hover:bg-amber-500/25'
+                                              }`}
+                                              title={`Click to toggle ${h.handler} payout (Paid / Due)`}
+                                            >
+                                              {isPaidHandler ? (
+                                                <>
+                                                  <Check className="w-2.5 h-2.5 stroke-[2.5]" />
+                                                  <span>Paid ₹{h.cost.toLocaleString('en-IN')}</span>
+                                                </>
+                                              ) : (
+                                                <>
+                                                  <Clock className="w-2.5 h-2.5" />
+                                                  <span className="font-bold">Due ₹{h.cost.toLocaleString('en-IN')}</span>
+                                                </>
+                                              )}
+                                            </button>
+                                          </div>
+                                        );
+                                      })}
                                     </div>
                                   ) : (
                                     <span className="text-slate-500 text-xs">-</span>
@@ -1981,29 +2089,33 @@ export function CollabManagerModal({ isOpen, onClose }: CollabManagerModalProps)
                                 <tr className="bg-[#121622] border-b border-slate-800">
                                   <td colSpan={10} className="px-6 py-3.5 text-xs">
                                     <div className="grid grid-cols-2 sm:grid-cols-6 gap-4 text-[11px]">
-                                      <div>
-                                        <span className="text-slate-500 block mb-0.5">Likes Handler</span>
-                                        <span className="font-bold text-cyan-300">
-                                          {item.likeHandler || 'None'} {item.likeCost ? `(₹${item.likeCost})` : ''}
-                                        </span>
-                                      </div>
-                                      <div>
-                                        <span className="text-slate-500 block mb-0.5">Handler Payout</span>
-                                        {hasHandler ? (
-                                          <button
-                                            type="button"
-                                            onClick={() => handleToggleLikePaymentStatus(item)}
-                                            className={`px-2 py-0.5 rounded-md font-semibold text-[10px] inline-flex items-center gap-1 cursor-pointer transition-all ${
-                                              isHandlerPaid
-                                                ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
-                                                : 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
-                                            }`}
-                                            title="Click to toggle"
-                                          >
-                                            {isHandlerPaid ? '✅ Paid (Clear)' : '⏳ Due (To Pay)'}
-                                          </button>
+                                      <div className="sm:col-span-2">
+                                        <span className="text-slate-500 block mb-0.5">Likes Handler(s) &amp; Payout</span>
+                                        {itemHandlers.length > 0 ? (
+                                          <div className="flex flex-wrap items-center gap-2 mt-0.5">
+                                            {itemHandlers.map((h, idx) => (
+                                              <div key={idx} className="flex items-center gap-1.5 bg-[#171b29] px-2 py-1 rounded-lg border border-slate-700/80">
+                                                <span className="font-bold text-cyan-300">
+                                                  {h.handler.toLowerCase().includes('prince') ? '👑 Prince' : h.handler.toLowerCase().includes('shivani') ? '🌸 Shivani' : `👤 ${h.handler}`}
+                                                </span>
+                                                <span className="text-slate-400 font-mono text-[10px]">₹{h.cost}</span>
+                                                <button
+                                                  type="button"
+                                                  onClick={() => handleToggleHandlerStatus(item, h.handler)}
+                                                  className={`px-1.5 py-0.5 rounded text-[9px] font-semibold cursor-pointer transition-all ${
+                                                    h.status === 'Paid'
+                                                      ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                                                      : 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
+                                                  }`}
+                                                  title="Click to toggle payout status"
+                                                >
+                                                  {h.status === 'Paid' ? '✅ Paid' : '⏳ Due'}
+                                                </button>
+                                              </div>
+                                            ))}
+                                          </div>
                                         ) : (
-                                          <span className="text-slate-500">-</span>
+                                          <span className="text-slate-500">None</span>
                                         )}
                                       </div>
                                       <div>
@@ -2247,148 +2359,297 @@ export function CollabManagerModal({ isOpen, onClose }: CollabManagerModalProps)
                   </div>
                 </div>
 
-                {/* Likes & Engagement Management (Prince / Shivani / Others) */}
-                <div className="p-3.5 bg-[#0f1117] rounded-2xl border border-slate-700 space-y-2.5 shadow-xs">
+                {/* Multi-Handler Likes Payout Selection (Prince + Shivani + Others) */}
+                <div className="p-3.5 bg-[#0f1117] rounded-2xl border border-slate-700 space-y-3 shadow-xs">
                   <div className="flex items-center justify-between">
                     <label className="flex items-center gap-1.5 text-xs font-bold text-cyan-300">
                       <Heart className="w-3.5 h-3.5 text-cyan-400 fill-cyan-400" />
-                      <span>Post Likes &amp; Engagement Handler</span>
+                      <span>Post Likes &amp; Engagement Handlers</span>
                     </label>
-                    <span className="text-[10px] text-slate-400 font-normal">
-                      For calculating payouts
+                    <span className="text-[10px] text-slate-400 font-mono">
+                      Total Likes: ₹{((formPrinceEnabled ? Number(formPrinceCost || 0) : 0) + (formShivaniEnabled ? Number(formShivaniCost || 0) : 0) + (formOtherEnabled ? Number(formOtherCost || 0) : 0)).toLocaleString('en-IN')}
                     </span>
                   </div>
 
-                  {/* Handler Segmented Buttons */}
-                  <div className="grid grid-cols-4 gap-1.5">
-                    {[
-                      { id: 'None', label: 'None' },
-                      { id: 'Prince', label: '👑 Prince' },
-                      { id: 'Shivani', label: '🌸 Shivani' },
-                      { id: 'Other', label: '➕ Other' },
-                    ].map((btn) => {
-                      const isActive = formLikeHandlerType === btn.id;
-                      return (
-                        <button
-                          key={btn.id}
-                          type="button"
-                          onClick={() => {
-                            setFormLikeHandlerType(btn.id as any);
-                            if (btn.id === 'None') {
-                              setFormLikeCost(0);
-                            } else if (formLikeCost === 0) {
-                              setFormLikeCost(200);
-                              if (formSpending === 0) setFormSpending(200);
-                            }
+                  {/* 1. Prince Option */}
+                  <div className={`p-2.5 rounded-xl border transition-all ${formPrinceEnabled ? 'bg-[#141928] border-cyan-500/40' : 'bg-[#121520] border-slate-800'}`}>
+                    <div className="flex items-center justify-between">
+                      <label className="flex items-center gap-2 cursor-pointer select-none">
+                        <input
+                          type="checkbox"
+                          checked={formPrinceEnabled}
+                          onChange={(e) => {
+                            const checked = e.target.checked;
+                            setFormPrinceEnabled(checked);
+                            const nextLikes = (checked ? Number(formPrinceCost || 300) : 0) +
+                              (formShivaniEnabled ? Number(formShivaniCost || 0) : 0) +
+                              (formOtherEnabled ? Number(formOtherCost || 0) : 0);
+                            setFormSpending(nextLikes);
                           }}
-                          className={`py-1.5 px-2 rounded-xl text-[11px] font-bold transition-all border cursor-pointer flex items-center justify-center gap-1 ${
-                            isActive
-                              ? 'bg-cyan-500 text-slate-950 border-cyan-400 shadow-xs'
-                              : 'bg-[#141824] text-slate-300 border-slate-700 hover:bg-slate-800'
-                          }`}
-                        >
-                          {btn.label}
-                        </button>
-                      );
-                    })}
-                  </div>
-
-                  {/* If "Other" is selected, show name input */}
-                  {formLikeHandlerType === 'Other' && (
-                    <div>
-                      <label className="block text-[10px] text-slate-400 mb-1">
-                        Handler Name *
+                          className="w-4 h-4 rounded border-slate-700 bg-slate-900 text-cyan-500 focus:ring-cyan-400 cursor-pointer"
+                        />
+                        <span className="text-xs font-bold text-cyan-300 flex items-center gap-1">
+                          👑 Prince
+                        </span>
                       </label>
-                      <input
-                        type="text"
-                        required
-                        value={formCustomHandlerName}
-                        onChange={(e) => setFormCustomHandlerName(e.target.value)}
-                        placeholder="e.g. Rahul, Akash, Aman..."
-                        className="w-full px-3 py-1.5 rounded-xl border border-slate-700 bg-[#141824] text-slate-100 text-xs focus:outline-none focus:border-cyan-400"
-                      />
-                    </div>
-                  )}
 
-                  {/* Likes Management Cost / Payout & Payout Status */}
-                  {formLikeHandlerType !== 'None' && (
-                    <div className="pt-1 space-y-2.5">
-                      <div>
-                        <div className="flex items-center justify-between mb-1">
-                          <label className="block text-[11px] text-slate-300 font-medium">
-                            Likes Fee / Payout (₹)
-                          </label>
-                          <div className="flex items-center gap-1.5">
-                            {[100, 200, 600].map((preset) => (
-                              <button
-                                key={preset}
-                                type="button"
-                                onClick={() => {
-                                  setFormLikeCost(preset);
-                                  if (formSpending === 0 || formSpending === formLikeCost) {
-                                    setFormSpending(preset);
-                                  }
-                                }}
-                                className={`px-2 py-0.5 text-[10px] font-mono rounded-lg font-bold transition-all cursor-pointer ${
-                                  formLikeCost === preset
-                                    ? 'bg-cyan-500 text-slate-950 shadow-xs'
-                                    : 'bg-slate-800 text-slate-300 hover:bg-slate-700 border border-slate-700'
-                                }`}
-                              >
-                                ₹{preset}
-                              </button>
-                            ))}
+                      {formPrinceEnabled && (
+                        <div className="flex items-center gap-1">
+                          {[100, 200, 300, 500, 600].map((preset) => (
+                            <button
+                              key={preset}
+                              type="button"
+                              onClick={() => {
+                                setFormPrinceCost(preset);
+                                const nextLikes = preset +
+                                  (formShivaniEnabled ? Number(formShivaniCost || 0) : 0) +
+                                  (formOtherEnabled ? Number(formOtherCost || 0) : 0);
+                                setFormSpending(nextLikes);
+                              }}
+                              className={`px-1.5 py-0.5 text-[10px] font-mono rounded font-bold transition-all cursor-pointer ${
+                                formPrinceCost === preset
+                                  ? 'bg-cyan-500 text-slate-950 shadow-xs'
+                                  : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
+                              }`}
+                            >
+                              ₹{preset}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    {formPrinceEnabled && (
+                      <div className="grid grid-cols-2 gap-2 mt-2 pt-2 border-t border-slate-800/80 animate-fadeIn">
+                        <div>
+                          <label className="block text-[10px] text-slate-400 mb-0.5">Prince Likes Fee (₹)</label>
+                          <input
+                            type="number"
+                            min="0"
+                            value={formPrinceCost}
+                            onChange={(e) => {
+                              const val = Number(e.target.value);
+                              setFormPrinceCost(val);
+                              const nextLikes = val +
+                                (formShivaniEnabled ? Number(formShivaniCost || 0) : 0) +
+                                (formOtherEnabled ? Number(formOtherCost || 0) : 0);
+                              setFormSpending(nextLikes);
+                            }}
+                            className="w-full px-2 py-1 rounded-lg border border-slate-700 bg-[#0f1117] font-mono text-xs text-cyan-300 focus:outline-none"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[10px] text-slate-400 mb-0.5">Prince Payout Status</label>
+                          <div className="grid grid-cols-2 gap-1">
+                            <button
+                              type="button"
+                              onClick={() => setFormPrinceStatus('Pending')}
+                              className={`py-1 px-1.5 rounded-lg text-[10px] font-bold transition-all border cursor-pointer flex items-center justify-center gap-1 ${
+                                formPrinceStatus === 'Pending'
+                                  ? 'bg-amber-500/20 text-amber-300 border-amber-400 shadow-xs'
+                                  : 'bg-slate-800 text-slate-400 border-slate-700'
+                              }`}
+                            >
+                              ⏳ Pending
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setFormPrinceStatus('Paid')}
+                              className={`py-1 px-1.5 rounded-lg text-[10px] font-bold transition-all border cursor-pointer flex items-center justify-center gap-1 ${
+                                formPrinceStatus === 'Paid'
+                                  ? 'bg-emerald-500/20 text-emerald-300 border-emerald-400 shadow-xs'
+                                  : 'bg-slate-800 text-slate-400 border-slate-700'
+                              }`}
+                            >
+                              ✅ Paid
+                            </button>
                           </div>
                         </div>
-                        <input
-                          type="number"
-                          min="0"
-                          value={formLikeCost}
-                          onChange={(e) => {
-                            const val = Number(e.target.value);
-                            setFormLikeCost(val);
-                            if (formSpending === 0 || formSpending === formLikeCost) {
-                              setFormSpending(val);
-                            }
-                          }}
-                          className="w-full px-2.5 py-1.5 rounded-xl border border-slate-700 bg-[#141824] font-mono text-xs text-cyan-300 focus:outline-none"
-                        />
                       </div>
+                    )}
+                  </div>
 
-                      {/* Handler Payout Status: Paid vs Pending */}
-                      <div>
-                        <label className="block text-[11px] text-slate-300 mb-1 font-medium">
-                          Handler Payout Status
-                        </label>
-                        <div className="grid grid-cols-2 gap-2">
-                          <button
-                            type="button"
-                            onClick={() => setFormLikePaymentStatus('Pending')}
-                            className={`py-1.5 px-3 rounded-xl text-xs font-bold transition-all border cursor-pointer flex items-center justify-center gap-1.5 ${
-                              formLikePaymentStatus === 'Pending'
-                                ? 'bg-amber-500/20 text-amber-300 border-amber-400 shadow-xs'
-                                : 'bg-[#141824] text-slate-400 border-slate-700 hover:bg-slate-800'
-                            }`}
-                          >
-                            <Clock className="w-3.5 h-3.5" />
-                            <span>⏳ Pending (To Pay)</span>
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setFormLikePaymentStatus('Paid')}
-                            className={`py-1.5 px-3 rounded-xl text-xs font-bold transition-all border cursor-pointer flex items-center justify-center gap-1.5 ${
-                              formLikePaymentStatus === 'Paid'
-                                ? 'bg-emerald-500/20 text-emerald-300 border-emerald-400 shadow-xs'
-                                : 'bg-[#141824] text-slate-400 border-slate-700 hover:bg-slate-800'
-                            }`}
-                          >
-                            <Check className="w-3.5 h-3.5 stroke-[2.5]" />
-                            <span>✅ Paid (Settled)</span>
-                          </button>
+                  {/* 2. Shivani Option */}
+                  <div className={`p-2.5 rounded-xl border transition-all ${formShivaniEnabled ? 'bg-[#16172a] border-indigo-500/40' : 'bg-[#121520] border-slate-800'}`}>
+                    <div className="flex items-center justify-between">
+                      <label className="flex items-center gap-2 cursor-pointer select-none">
+                        <input
+                          type="checkbox"
+                          checked={formShivaniEnabled}
+                          onChange={(e) => {
+                            const checked = e.target.checked;
+                            setFormShivaniEnabled(checked);
+                            const nextLikes = (formPrinceEnabled ? Number(formPrinceCost || 0) : 0) +
+                              (checked ? Number(formShivaniCost || 200) : 0) +
+                              (formOtherEnabled ? Number(formOtherCost || 0) : 0);
+                            setFormSpending(nextLikes);
+                          }}
+                          className="w-4 h-4 rounded border-slate-700 bg-slate-900 text-indigo-500 focus:ring-indigo-400 cursor-pointer"
+                        />
+                        <span className="text-xs font-bold text-indigo-300 flex items-center gap-1">
+                          🌸 Shivani
+                        </span>
+                      </label>
+
+                      {formShivaniEnabled && (
+                        <div className="flex items-center gap-1">
+                          {[100, 200, 300, 500, 600].map((preset) => (
+                            <button
+                              key={preset}
+                              type="button"
+                              onClick={() => {
+                                setFormShivaniCost(preset);
+                                const nextLikes = (formPrinceEnabled ? Number(formPrinceCost || 0) : 0) +
+                                  preset +
+                                  (formOtherEnabled ? Number(formOtherCost || 0) : 0);
+                                setFormSpending(nextLikes);
+                              }}
+                              className={`px-1.5 py-0.5 text-[10px] font-mono rounded font-bold transition-all cursor-pointer ${
+                                formShivaniCost === preset
+                                  ? 'bg-indigo-500 text-white shadow-xs'
+                                  : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
+                              }`}
+                            >
+                              ₹{preset}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    {formShivaniEnabled && (
+                      <div className="grid grid-cols-2 gap-2 mt-2 pt-2 border-t border-slate-800/80 animate-fadeIn">
+                        <div>
+                          <label className="block text-[10px] text-slate-400 mb-0.5">Shivani Likes Fee (₹)</label>
+                          <input
+                            type="number"
+                            min="0"
+                            value={formShivaniCost}
+                            onChange={(e) => {
+                              const val = Number(e.target.value);
+                              setFormShivaniCost(val);
+                              const nextLikes = (formPrinceEnabled ? Number(formPrinceCost || 0) : 0) +
+                                val +
+                                (formOtherEnabled ? Number(formOtherCost || 0) : 0);
+                              setFormSpending(nextLikes);
+                            }}
+                            className="w-full px-2 py-1 rounded-lg border border-slate-700 bg-[#0f1117] font-mono text-xs text-indigo-300 focus:outline-none"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[10px] text-slate-400 mb-0.5">Shivani Payout Status</label>
+                          <div className="grid grid-cols-2 gap-1">
+                            <button
+                              type="button"
+                              onClick={() => setFormShivaniStatus('Pending')}
+                              className={`py-1 px-1.5 rounded-lg text-[10px] font-bold transition-all border cursor-pointer flex items-center justify-center gap-1 ${
+                                formShivaniStatus === 'Pending'
+                                  ? 'bg-amber-500/20 text-amber-300 border-amber-400 shadow-xs'
+                                  : 'bg-slate-800 text-slate-400 border-slate-700'
+                              }`}
+                            >
+                              ⏳ Pending
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setFormShivaniStatus('Paid')}
+                              className={`py-1 px-1.5 rounded-lg text-[10px] font-bold transition-all border cursor-pointer flex items-center justify-center gap-1 ${
+                                formShivaniStatus === 'Paid'
+                                  ? 'bg-emerald-500/20 text-emerald-300 border-emerald-400 shadow-xs'
+                                  : 'bg-slate-800 text-slate-400 border-slate-700'
+                              }`}
+                            >
+                              ✅ Paid
+                            </button>
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  )}
+                    )}
+                  </div>
+
+                  {/* 3. Other / New Handler */}
+                  <div className={`p-2.5 rounded-xl border transition-all ${formOtherEnabled ? 'bg-[#141824] border-slate-600' : 'bg-[#121520] border-slate-800'}`}>
+                    <label className="flex items-center gap-2 cursor-pointer select-none">
+                      <input
+                        type="checkbox"
+                        checked={formOtherEnabled}
+                        onChange={(e) => {
+                          const checked = e.target.checked;
+                          setFormOtherEnabled(checked);
+                          const nextLikes = (formPrinceEnabled ? Number(formPrinceCost || 0) : 0) +
+                            (formShivaniEnabled ? Number(formShivaniCost || 0) : 0) +
+                            (checked ? Number(formOtherCost || 150) : 0);
+                          setFormSpending(nextLikes);
+                        }}
+                        className="w-4 h-4 rounded border-slate-700 bg-slate-900 text-cyan-500 focus:ring-cyan-400 cursor-pointer"
+                      />
+                      <span className="text-xs font-bold text-slate-300 flex items-center gap-1">
+                        👤 Other / New Guy
+                      </span>
+                    </label>
+
+                    {formOtherEnabled && (
+                      <div className="space-y-2 mt-2 pt-2 border-t border-slate-800 animate-fadeIn">
+                        <div>
+                          <label className="block text-[10px] text-slate-400 mb-0.5">Handler Name *</label>
+                          <input
+                            type="text"
+                            required
+                            value={formOtherName}
+                            onChange={(e) => setFormOtherName(e.target.value)}
+                            placeholder="e.g. Rahul, Aman..."
+                            className="w-full px-2 py-1 rounded-lg border border-slate-700 bg-[#0f1117] text-xs text-slate-100 focus:outline-none"
+                          />
+                        </div>
+                        <div className="grid grid-cols-2 gap-2">
+                          <div>
+                            <label className="block text-[10px] text-slate-400 mb-0.5">Fee (₹)</label>
+                            <input
+                              type="number"
+                              min="0"
+                              value={formOtherCost}
+                              onChange={(e) => {
+                                const val = Number(e.target.value);
+                                setFormOtherCost(val);
+                                const nextLikes = (formPrinceEnabled ? Number(formPrinceCost || 0) : 0) +
+                                  (formShivaniEnabled ? Number(formShivaniCost || 0) : 0) +
+                                  val;
+                                setFormSpending(nextLikes);
+                              }}
+                              className="w-full px-2 py-1 rounded-lg border border-slate-700 bg-[#0f1117] font-mono text-xs text-slate-200 focus:outline-none"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-[10px] text-slate-400 mb-0.5">Payout Status</label>
+                            <div className="grid grid-cols-2 gap-1">
+                              <button
+                                type="button"
+                                onClick={() => setFormOtherStatus('Pending')}
+                                className={`py-1 px-1.5 rounded-lg text-[10px] font-bold transition-all border cursor-pointer flex items-center justify-center gap-1 ${
+                                  formOtherStatus === 'Pending'
+                                    ? 'bg-amber-500/20 text-amber-300 border-amber-400 shadow-xs'
+                                    : 'bg-slate-800 text-slate-400 border-slate-700'
+                                }`}
+                              >
+                                ⏳ Pending
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setFormOtherStatus('Paid')}
+                                className={`py-1 px-1.5 rounded-lg text-[10px] font-bold transition-all border cursor-pointer flex items-center justify-center gap-1 ${
+                                  formOtherStatus === 'Paid'
+                                    ? 'bg-emerald-500/20 text-emerald-300 border-emerald-400 shadow-xs'
+                                    : 'bg-slate-800 text-slate-400 border-slate-700'
+                                }`}
+                              >
+                                ✅ Paid
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 </div>
 
                 {/* Financials: Base Pay, Bonus, Spend */}
@@ -2419,9 +2680,21 @@ export function CollabManagerModal({ isOpen, onClose }: CollabManagerModalProps)
                     </div>
 
                     <div>
-                      <label className="block text-[11px] text-slate-400 mb-1 font-medium">
-                        Spend (₹)
-                      </label>
+                      <div className="flex items-center justify-between mb-1">
+                        <label className="block text-[11px] text-slate-400 font-medium">
+                          Spend (₹)
+                        </label>
+                        {((formPrinceEnabled ? Number(formPrinceCost || 0) : 0) + (formShivaniEnabled ? Number(formShivaniCost || 0) : 0) + (formOtherEnabled ? Number(formOtherCost || 0) : 0)) > 0 && (
+                          <button
+                            type="button"
+                            onClick={() => setFormSpending((formPrinceEnabled ? Number(formPrinceCost || 0) : 0) + (formShivaniEnabled ? Number(formShivaniCost || 0) : 0) + (formOtherEnabled ? Number(formOtherCost || 0) : 0))}
+                            className="text-[10px] text-cyan-400 hover:text-cyan-300 underline font-mono cursor-pointer"
+                            title="Sync spend to likes total"
+                          >
+                            Sync Likes
+                          </button>
+                        )}
+                      </div>
                       <input
                         type="number"
                         value={formSpending}

@@ -19,6 +19,8 @@ export const INITIAL_COLLABS: CollabItem[] = [
     amount: 2000,
     spending: 300,
     netProfit: 1700,
+    likeHandler: 'Prince',
+    likeCost: 300,
     invoiceSent: 'No',
     status: 'Paid',
     paymentReceivedDate: '2026-07-17',
@@ -526,9 +528,16 @@ export function getMonthName(monthKey: string): string {
   return date.toLocaleDateString('en-US', { month: 'long' });
 }
 
+export function getCurrentMonthKey(): string {
+  const d = new Date();
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  return `${year}-${month}`;
+}
+
 export function getUniqueMonths(items: CollabItem[]): string[] {
   const months = new Set<string>();
-  const currentMonth = '2026-09';
+  const currentMonth = getCurrentMonthKey();
   months.add(currentMonth);
 
   for (const item of items) {
@@ -587,5 +596,65 @@ export function calculateMonthSummary(items: CollabItem[], monthFilter: string):
 export function calculateAllMonthsSummary(items: CollabItem[]): CollabMonthSummary[] {
   const months = getUniqueMonths(items).filter((m) => m !== 'all').sort();
   return months.map((m) => calculateMonthSummary(items, m));
+}
+
+export function calculateLikeHandlersStats(items: CollabItem[], monthFilter = 'all') {
+  const filtered = monthFilter === 'all' ? items : items.filter((i) => i.month === monthFilter);
+
+  const statsMap: Record<string, { postsCount: number; totalCost: number }> = {};
+  let totalPostsWithLikes = 0;
+  let totalLikesCost = 0;
+
+  for (const item of filtered) {
+    if (item.likeHandler && item.likeHandler.trim() && item.likeHandler.toLowerCase() !== 'none') {
+      const handlerName = item.likeHandler.trim();
+      const cost = item.likeCost !== undefined && item.likeCost !== null ? Number(item.likeCost) : Number(item.spending || 0);
+
+      if (!statsMap[handlerName]) {
+        statsMap[handlerName] = { postsCount: 0, totalCost: 0 };
+      }
+      statsMap[handlerName].postsCount += 1;
+      statsMap[handlerName].totalCost += cost;
+
+      totalPostsWithLikes += 1;
+      totalLikesCost += cost;
+    }
+  }
+
+  // Aggregate Prince & Shivani specifically (case-insensitive)
+  let princeCount = 0;
+  let princeCost = 0;
+  let shivaniCount = 0;
+  let shivaniCost = 0;
+  let othersCount = 0;
+  let othersCost = 0;
+
+  for (const [name, data] of Object.entries(statsMap)) {
+    if (name.toLowerCase().includes('prince')) {
+      princeCount += data.postsCount;
+      princeCost += data.totalCost;
+    } else if (name.toLowerCase().includes('shivani')) {
+      shivaniCount += data.postsCount;
+      shivaniCost += data.totalCost;
+    } else {
+      othersCount += data.postsCount;
+      othersCost += data.totalCost;
+    }
+  }
+
+  const handlersList = Object.entries(statsMap).map(([name, data]) => ({
+    name,
+    postsCount: data.postsCount,
+    totalCost: data.totalCost,
+  }));
+
+  return {
+    handlers: handlersList,
+    totalPostsWithLikes,
+    totalLikesCost,
+    prince: { name: 'Prince', postsCount: princeCount, totalCost: princeCost },
+    shivani: { name: 'Shivani', postsCount: shivaniCount, totalCost: shivaniCost },
+    others: { name: 'Others / New Guy', postsCount: othersCount, totalCost: othersCost },
+  };
 }
 

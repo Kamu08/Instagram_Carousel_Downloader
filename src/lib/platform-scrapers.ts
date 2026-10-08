@@ -48,34 +48,77 @@ async function fetchWithTimeout(
 async function downloadAndProcessSlide(
   imageUrl: string,
   index: number
-): Promise<CarouselSlide> {
-  const response = await fetchWithTimeout(imageUrl);
-  if (!response.ok) {
-    throw new Error(`Failed to download slide ${index + 1}: HTTP ${response.status}`);
+): Promise<CarouselSlide | null> {
+  try {
+    let response: Response | null = null;
+
+    try {
+      response = await fetchWithTimeout(imageUrl, {}, 10000);
+    } catch {
+      // Retry with realistic desktop browser headers
+      try {
+        response = await fetchWithTimeout(
+          imageUrl,
+          {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+            Accept: 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
+          },
+          10000
+        );
+      } catch {
+        response = null;
+      }
+    }
+
+    // If still failing or 403, retry with domain referer
+    if (!response || !response.ok) {
+      try {
+        let referer = 'https://www.linkedin.com/';
+        if (imageUrl.includes('twimg.com') || imageUrl.includes('twitter.com')) {
+          referer = 'https://twitter.com/';
+        } else if (imageUrl.includes('cdninstagram.com') || imageUrl.includes('fbcdn.net')) {
+          referer = 'https://www.instagram.com/';
+        } else if (imageUrl.includes('ytimg.com') || imageUrl.includes('youtube.com')) {
+          referer = 'https://www.youtube.com/';
+        }
+
+        response = await fetchWithTimeout(imageUrl, { Referer: referer }, 10000);
+      } catch {
+        response = null;
+      }
+    }
+
+    if (!response || !response.ok) {
+      console.warn(`Failed to download slide ${index + 1} from ${imageUrl}: HTTP ${response?.status || 'network error'}`);
+      return null;
+    }
+
+    const arrayBuffer = await response.arrayBuffer();
+    const buffer = Buffer.from(arrayBuffer);
+    const slideNumber = String(index + 1).padStart(2, '0');
+    const filename = `carousel-${slideNumber}.png`;
+
+    const processed = await processImageToPng(buffer, { preset: 'original' });
+
+    const slide: CarouselSlide = {
+      id: `slide-${index + 1}-${Date.now()}`,
+      originalIndex: index,
+      currentIndex: index,
+      filename,
+      originalUrl: imageUrl,
+      originalFormat: processed.originalFormat,
+      dataUrl: processed.dataUrl,
+      width: processed.width,
+      height: processed.height,
+      aspectRatio: processed.aspectRatio,
+      sizeBytes: processed.sizeBytes,
+    };
+
+    return slide;
+  } catch (err) {
+    console.warn(`Error processing slide ${index + 1}:`, err);
+    return null;
   }
-
-  const arrayBuffer = await response.arrayBuffer();
-  const buffer = Buffer.from(arrayBuffer);
-  const slideNumber = String(index + 1).padStart(2, '0');
-  const filename = `carousel-${slideNumber}.png`;
-
-  const processed = await processImageToPng(buffer, { preset: 'original' });
-
-  const slide: CarouselSlide = {
-    id: `slide-${index + 1}-${Date.now()}`,
-    originalIndex: index,
-    currentIndex: index,
-    filename,
-    originalUrl: imageUrl,
-    originalFormat: processed.originalFormat,
-    dataUrl: processed.dataUrl,
-    width: processed.width,
-    height: processed.height,
-    aspectRatio: processed.aspectRatio,
-    sizeBytes: processed.sizeBytes,
-  };
-
-  return slide;
 }
 
 /**
@@ -84,10 +127,15 @@ async function downloadAndProcessSlide(
  * -------------------------------------------------------------
  */
 export async function fetchTwitterPost(inputUrl: string): Promise<MultiPlatformFetchResult> {
-  const cleanUrl = inputUrl.trim();
-  const tweetIdMatch = cleanUrl.match(/(?:twitter\.com|x\.com)\/(?:#!\/)?[\w.-]+\/status(?:es)?\/(\d+)/i);
+  let cleanUrl = inputUrl.trim();
+  if (!cleanUrl.startsWith('http://') && !cleanUrl.startsWith('https://')) {
+    cleanUrl = `https://${cleanUrl}`;
+  }
 
-  if (!tweetIdMatch || !tweetIdMatch[1]) {
+  const tweetIdMatch = cleanUrl.match(/(?:twitter\.com|x\.com|vxtwitter\.com|fxtwitter\.com|fixupx\.com)\/(?:#!\/)?[\w.-]+\/status(?:es)?\/(\d+)/i);
+  const tweetId = tweetIdMatch ? tweetIdMatch[1] : cleanUrl.match(/(\d{15,22})/)?.[1];
+
+  if (!tweetId) {
     return {
       success: false,
       shortcode: '',
@@ -99,7 +147,6 @@ export async function fetchTwitterPost(inputUrl: string): Promise<MultiPlatformF
     };
   }
 
-  const tweetId = tweetIdMatch[1];
   let photoUrls: string[] = [];
   let author = 'Twitter User';
   let caption = '';
@@ -129,7 +176,7 @@ export async function fetchTwitterPost(inputUrl: string): Promise<MultiPlatformF
     console.warn('Twitter syndication API failed, attempting FXTwitter fallback:', err);
   }
 
-  // Method 2: FXTwitter / VxTwitter Public Mirror API Fallback
+  // Method 2: FXTwitter Public API Fallback
   if (photoUrls.length === 0) {
     try {
       const fxUrl = `https://api.fxtwitter.com/status/${tweetId}`;
@@ -151,7 +198,45 @@ export async function fetchTwitterPost(inputUrl: string): Promise<MultiPlatformF
         }
       }
     } catch (err) {
-      console.warn('FXTwitter fallback failed:', err);
+      console.warn('FXTwitter fallback failed, attempting VxTwitter:', err);
+    }
+  }
+
+  // Method 3: VxTwitter API Fallback
+  if (photoUrls.length === 0) {
+    try {
+      const vxUrl = `https://api.vxtwitter.com/status/${tweetId}`;
+      const res = await fetchWithTimeout(vxUrl);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.user_name) author = `${data.user_name} (@${data.user_screen_name || 'user'})`;
+        if (data.text) caption = data.text;
+        if (Array.isArray(data.mediaURLs) && data.mediaURLs.length > 0) {
+          photoUrls = data.mediaURLs;
+        }
+      }
+    } catch (err) {
+      console.warn('VxTwitter fallback failed:', err);
+    }
+  }
+
+  // Method 4: Twitter oEmbed Fallback
+  if (photoUrls.length === 0) {
+    try {
+      const oembedUrl = `https://publish.twitter.com/oembed?url=https://twitter.com/i/status/${tweetId}`;
+      const res = await fetchWithTimeout(oembedUrl);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.author_name) author = data.author_name;
+        if (data.html) {
+          const imgMatch = data.html.match(/<img[^>]+src=["'](https:\/\/[^"'\s]+)["']/i);
+          if (imgMatch && imgMatch[1]) {
+            photoUrls.push(imgMatch[1]);
+          }
+        }
+      }
+    } catch (err) {
+      console.warn('Twitter oEmbed fallback failed:', err);
     }
   }
 
@@ -162,16 +247,36 @@ export async function fetchTwitterPost(inputUrl: string): Promise<MultiPlatformF
       platform: 'twitter',
       slideCount: 0,
       slides: [],
-      error: 'No photos or carousel images found in this Tweet. Please verify that this post contains images.',
+      error: 'No photos or carousel images found in this Tweet. Please verify that this post contains public images.',
       errorType: 'NO_MEDIA',
     };
   }
 
-  // Process all images concurrently
+  // Process all images concurrently with error resilience
   try {
-    const slides = await Promise.all(
+    const rawSlides = await Promise.all(
       photoUrls.map((url, idx) => downloadAndProcessSlide(url, idx))
     );
+
+    const slides = rawSlides.filter((s): s is CarouselSlide => s !== null);
+
+    if (slides.length === 0) {
+      return {
+        success: false,
+        shortcode: tweetId,
+        platform: 'twitter',
+        slideCount: 0,
+        slides: [],
+        error: 'Failed to download and process tweet images.',
+        errorType: 'NO_MEDIA',
+      };
+    }
+
+    // Renumber slides
+    slides.forEach((s, idx) => {
+      s.currentIndex = idx;
+      s.filename = `carousel-${String(idx + 1).padStart(2, '0')}.png`;
+    });
 
     return {
       success: true,
@@ -368,7 +473,10 @@ function extractLinkedInMediaUrls(html: string): string[] {
  * -------------------------------------------------------------
  */
 export async function fetchLinkedInPost(inputUrl: string): Promise<MultiPlatformFetchResult> {
-  const cleanUrl = inputUrl.trim();
+  let cleanUrl = inputUrl.trim();
+  if (!cleanUrl.startsWith('http://') && !cleanUrl.startsWith('https://')) {
+    cleanUrl = `https://${cleanUrl}`;
+  }
 
   // Validate LinkedIn URL (including lnkd.in short URLs)
   if (!cleanUrl.includes('linkedin.com') && !cleanUrl.includes('lnkd.in')) {
@@ -501,11 +609,31 @@ export async function fetchLinkedInPost(inputUrl: string): Promise<MultiPlatform
     };
   }
 
-  // Process all extracted slides
+  // Process all extracted slides with error resilience
   try {
-    const slides = await Promise.all(
+    const rawSlides = await Promise.all(
       imageUrls.map((url, idx) => downloadAndProcessSlide(url, idx))
     );
+
+    const slides = rawSlides.filter((s): s is CarouselSlide => s !== null);
+
+    if (slides.length === 0) {
+      return {
+        success: false,
+        shortcode: postId,
+        platform: 'linkedin',
+        slideCount: 0,
+        slides: [],
+        error: 'Failed to download and process LinkedIn slide images.',
+        errorType: 'NO_MEDIA',
+      };
+    }
+
+    // Renumber slides
+    slides.forEach((s, idx) => {
+      s.currentIndex = idx;
+      s.filename = `carousel-${String(idx + 1).padStart(2, '0')}.png`;
+    });
 
     return {
       success: true,
@@ -536,7 +664,11 @@ export async function fetchLinkedInPost(inputUrl: string): Promise<MultiPlatform
  * -------------------------------------------------------------
  */
 export async function fetchThreadsPost(inputUrl: string): Promise<MultiPlatformFetchResult> {
-  const cleanUrl = inputUrl.trim();
+  let cleanUrl = inputUrl.trim();
+  if (!cleanUrl.startsWith('http://') && !cleanUrl.startsWith('https://')) {
+    cleanUrl = `https://${cleanUrl}`;
+  }
+
   const shortcodeMatch = cleanUrl.match(/threads\.(?:net|com)\/(?:@[\w.-]+\/post|t)\/([A-Za-z0-9_-]+)/i);
 
   if (!shortcodeMatch || !shortcodeMatch[1]) {
@@ -631,11 +763,31 @@ export async function fetchThreadsPost(inputUrl: string): Promise<MultiPlatformF
     };
   }
 
-  // Process all images
+  // Process all images with resilience
   try {
-    const slides = await Promise.all(
+    const rawSlides = await Promise.all(
       photoUrls.map((url, idx) => downloadAndProcessSlide(url, idx))
     );
+
+    const slides = rawSlides.filter((s): s is CarouselSlide => s !== null);
+
+    if (slides.length === 0) {
+      return {
+        success: false,
+        shortcode,
+        platform: 'threads',
+        slideCount: 0,
+        slides: [],
+        error: 'Failed to download and process Threads slide images.',
+        errorType: 'NO_MEDIA',
+      };
+    }
+
+    // Renumber slides
+    slides.forEach((s, idx) => {
+      s.currentIndex = idx;
+      s.filename = `carousel-${String(idx + 1).padStart(2, '0')}.png`;
+    });
 
     return {
       success: true,
@@ -667,11 +819,14 @@ export async function fetchThreadsPost(inputUrl: string): Promise<MultiPlatformF
  */
 export function extractYouTubeVideoId(inputUrl: string): string | null {
   if (!inputUrl || typeof inputUrl !== 'string') return null;
-  const clean = inputUrl.trim();
+  let clean = inputUrl.trim();
+  if (!clean.startsWith('http://') && !clean.startsWith('https://')) {
+    clean = `https://${clean}`;
+  }
 
-  // Handle standard watch URLs, shorts, embed, youtu.be
+  // Handle standard watch URLs, shorts, embed, youtu.be, live
   const patterns = [
-    /(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/|youtube\.com\/shorts\/)([A-Za-z0-9_-]{11})/i,
+    /(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/|youtube\.com\/shorts\/|youtube\.com\/live\/)([A-Za-z0-9_-]{11})/i,
     /youtube\.com\/v\/([A-Za-z0-9_-]{11})/i,
     /youtube\.com\/e\/([A-Za-z0-9_-]{11})/i,
     /youtu\.be\/([A-Za-z0-9_-]{11})/i,
@@ -685,8 +840,8 @@ export function extractYouTubeVideoId(inputUrl: string): string | null {
   }
 
   // Direct 11-char ID
-  if (/^[A-Za-z0-9_-]{11}$/.test(clean)) {
-    return clean;
+  if (/^[A-Za-z0-9_-]{11}$/.test(inputUrl.trim())) {
+    return inputUrl.trim();
   }
 
   return null;
@@ -729,6 +884,7 @@ export async function fetchYouTubePost(inputUrl: string): Promise<MultiPlatformF
     `https://i.ytimg.com/vi/${videoId}/maxresdefault.jpg`,
     `https://i.ytimg.com/vi/${videoId}/sddefault.jpg`,
     `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`,
+    `https://i.ytimg.com/vi/${videoId}/mqdefault.jpg`,
     `https://i.ytimg.com/vi/${videoId}/1.jpg`,
     `https://i.ytimg.com/vi/${videoId}/2.jpg`,
     `https://i.ytimg.com/vi/${videoId}/3.jpg`,
@@ -759,11 +915,31 @@ export async function fetchYouTubePost(inputUrl: string): Promise<MultiPlatformF
     validImageUrls.push(`https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`);
   }
 
-  // 3. Process slides
+  // 3. Process slides with resilience
   try {
-    const slides = await Promise.all(
+    const rawSlides = await Promise.all(
       validImageUrls.map((url, idx) => downloadAndProcessSlide(url, idx))
     );
+
+    const slides = rawSlides.filter((s): s is CarouselSlide => s !== null);
+
+    if (slides.length === 0) {
+      return {
+        success: false,
+        shortcode: videoId,
+        platform: 'youtube',
+        slideCount: 0,
+        slides: [],
+        error: 'Failed to download and process YouTube video frames.',
+        errorType: 'NO_MEDIA',
+      };
+    }
+
+    // Renumber slides
+    slides.forEach((s, idx) => {
+      s.currentIndex = idx;
+      s.filename = `carousel-${String(idx + 1).padStart(2, '0')}.png`;
+    });
 
     return {
       success: true,
@@ -794,19 +970,23 @@ export async function fetchYouTubePost(inputUrl: string): Promise<MultiPlatformF
  * -------------------------------------------------------------
  */
 export async function fetchMultiPlatformCarousel(inputUrl: string): Promise<MultiPlatformFetchResult> {
-  const platform = detectPlatform(inputUrl);
+  const normalizedUrl = inputUrl.trim().startsWith('http://') || inputUrl.trim().startsWith('https://')
+    ? inputUrl.trim()
+    : `https://${inputUrl.trim()}`;
+
+  const platform = detectPlatform(normalizedUrl);
 
   switch (platform) {
     case 'twitter':
-      return fetchTwitterPost(inputUrl);
+      return fetchTwitterPost(normalizedUrl);
     case 'linkedin':
-      return fetchLinkedInPost(inputUrl);
+      return fetchLinkedInPost(normalizedUrl);
     case 'threads':
-      return fetchThreadsPost(inputUrl);
+      return fetchThreadsPost(normalizedUrl);
     case 'youtube':
-      return fetchYouTubePost(inputUrl);
+      return fetchYouTubePost(normalizedUrl);
     case 'instagram':
     default:
-      return fetchInstagramCarousel(inputUrl);
+      return fetchInstagramCarousel(normalizedUrl);
   }
 }

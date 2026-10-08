@@ -20,7 +20,14 @@ export function extractShortcode(inputUrl: string): string | null {
     return match[1];
   }
 
-  if (/^[A-Za-z0-9_-]{9,20}$/.test(cleanUrl)) {
+  // Handle nested profile paths e.g. instagram.com/username/p/SHORTCODE
+  const profilePostMatch = cleanUrl.match(/instagram\.com\/[^\/]+\/(?:p|reel|reels)\/([A-Za-z0-9_-]+)/i);
+  if (profilePostMatch && profilePostMatch[1]) {
+    return profilePostMatch[1];
+  }
+
+  // Direct shortcode
+  if (/^[A-Za-z0-9_-]{9,25}$/.test(cleanUrl)) {
     return cleanUrl;
   }
 
@@ -75,16 +82,17 @@ function unescapeInstagramString(str: string): string {
  */
 function extractCarouselUrlsFromHtml(html: string): string[] {
   if (!html) return [];
+  const unescaped = unescapeInstagramString(html);
 
   // Strategy A: Parse carousel_media JSON array directly
-  const carouselIdx = html.indexOf('"carousel_media":[');
+  const carouselIdx = unescaped.indexOf('"carousel_media":[');
   if (carouselIdx !== -1) {
     let depth = 0;
     const start = carouselIdx + '"carousel_media":'.length;
     let end = start;
-    for (let i = start; i < html.length; i++) {
-      if (html[i] === '[') depth++;
-      else if (html[i] === ']') {
+    for (let i = start; i < unescaped.length; i++) {
+      if (unescaped[i] === '[') depth++;
+      else if (unescaped[i] === ']') {
         depth--;
         if (depth === 0) {
           end = i + 1;
@@ -94,7 +102,7 @@ function extractCarouselUrlsFromHtml(html: string): string[] {
     }
 
     try {
-      const jsonSlice = html.substring(start, end);
+      const jsonSlice = unescaped.substring(start, end);
       const items = JSON.parse(jsonSlice);
       if (Array.isArray(items) && items.length > 0) {
         const urls: string[] = [];
@@ -128,10 +136,10 @@ function extractCarouselUrlsFromHtml(html: string): string[] {
   }
 
   // Strategy B: Parse edge_sidecar_to_children GraphQL structure
-  const sidecarIdx = html.indexOf('"edge_sidecar_to_children":');
+  const sidecarIdx = unescaped.indexOf('"edge_sidecar_to_children":');
   if (sidecarIdx !== -1) {
     try {
-      const match = html.match(/"edge_sidecar_to_children"\s*:\s*(\{"edges":\[.*?\]\})/s);
+      const match = unescaped.match(/"edge_sidecar_to_children"\s*:\s*(\{"edges":\[.*?\]\})/s);
       if (match && match[1]) {
         const sidecarObj = JSON.parse(match[1]);
         const edges = sidecarObj.edges || [];
@@ -140,6 +148,11 @@ function extractCarouselUrlsFromHtml(html: string): string[] {
           const node = edge.node;
           if (node?.display_url) {
             urls.push(unescapeInstagramString(node.display_url));
+          } else if (node?.display_resources && Array.isArray(node.display_resources) && node.display_resources.length > 0) {
+            const sortedRes = [...node.display_resources].sort((a: any, b: any) => (b.config_width || 0) - (a.config_width || 0));
+            if (sortedRes[0]?.src) {
+              urls.push(unescapeInstagramString(sortedRes[0].src));
+            }
           }
         }
         if (urls.length > 0) return urls;
@@ -149,10 +162,33 @@ function extractCarouselUrlsFromHtml(html: string): string[] {
     }
   }
 
-  // Strategy C: General uncropped candidate scan
+  // Strategy C: JSON-LD Structured Data
+  try {
+    const jsonLdMatches = unescaped.matchAll(/<script\s+type=["']application\/ld\+json["']>([\s\S]*?)<\/script>/gi);
+    for (const match of jsonLdMatches) {
+      if (match[1]) {
+        try {
+          const parsed = JSON.parse(match[1]);
+          if (parsed.image) {
+            const imgList = Array.isArray(parsed.image) ? parsed.image : [parsed.image];
+            const ldUrls: string[] = [];
+            for (const img of imgList) {
+              const url = typeof img === 'string' ? img : img.url || img.contentUrl;
+              if (url && typeof url === 'string') {
+                ldUrls.push(unescapeInstagramString(url));
+              }
+            }
+            if (ldUrls.length > 0) return ldUrls;
+          }
+        } catch {}
+      }
+    }
+  } catch {}
+
+  // Strategy D: General uncropped candidate scan
   const allImageUrls = [
     ...new Set(
-      [...html.matchAll(/https:\/\/[^"'<>\s]+?\.(?:jpg|jpeg|png|webp|heic)[^"'<>\s]*/gi)].map((m) =>
+      [...unescaped.matchAll(/https:\/\/[^"'<>\s]+?\.(?:jpg|jpeg|png|webp|heic)[^"'<>\s]*/gi)].map((m) =>
         unescapeInstagramString(m[0])
       )
     ),
@@ -174,13 +210,25 @@ function extractCarouselUrlsFromHtml(html: string): string[] {
     grouped[key].push(u);
   }
 
-  return Object.values(grouped).map((urls) => {
+  const extractedGrouped = Object.values(grouped).map((urls) => {
     return (
       urls.find((u) => u.includes('1440') || u.includes('xpid.1440') || u.includes('1440.')) ||
       urls.find((u) => u.includes('1080') || u.includes('xpid.1080')) ||
       urls[0]
     );
   });
+
+  if (extractedGrouped.length > 0) {
+    return extractedGrouped;
+  }
+
+  // Strategy E: OpenGraph og:image fallback for single posts/reels
+  const ogMatch = unescaped.match(/<meta\s+property=["']og:image["']\s+content=["'](https?:\/\/[^"'\s]+)["']/i);
+  if (ogMatch && ogMatch[1]) {
+    return [unescapeInstagramString(ogMatch[1])];
+  }
+
+  return [];
 }
 
 /**
@@ -249,11 +297,30 @@ export async function fetchInstagramCarousel(url: string): Promise<InstagramFetc
           }
         }
       } catch (e) {
-        console.warn('Tier 3 Embed fetch failed:', e);
+        console.warn('Tier 3 Embed captioned fetch failed:', e);
       }
     }
 
-    // Tier 4: Instagram Official oEmbed fallback
+    // Tier 4: Instagram Standard Embed Endpoint
+    if (imageUrls.length === 0) {
+      try {
+        const embedRes = await fetchWithTimeout(`https://www.instagram.com/p/${shortcode}/embed/`, {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+        });
+        if (embedRes.ok) {
+          const embedHtml = await embedRes.text();
+          const embedUrls = extractCarouselUrlsFromHtml(embedHtml);
+          if (embedUrls.length > 0) {
+            imageUrls = embedUrls;
+            if (!html) html = embedHtml;
+          }
+        }
+      } catch (e) {
+        console.warn('Tier 4 Standard Embed fetch failed:', e);
+      }
+    }
+
+    // Tier 5: Instagram Official oEmbed fallback
     if (imageUrls.length === 0) {
       try {
         const oembedRes = await fetchWithTimeout(`https://api.instagram.com/oembed/?url=https://www.instagram.com/p/${shortcode}/`);
@@ -265,7 +332,7 @@ export async function fetchInstagramCarousel(url: string): Promise<InstagramFetc
           }
         }
       } catch (e) {
-        console.warn('Tier 4 oEmbed fetch failed:', e);
+        console.warn('Tier 5 oEmbed fetch failed:', e);
       }
     }
 

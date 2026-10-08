@@ -80,6 +80,8 @@ export async function POST(req: NextRequest) {
           TotalAmount: (c.basePay || 0) + (c.bonus || 0) || c.amount || 0,
           Spend: c.spending || 0,
           NetProfit: ((c.basePay || 0) + (c.bonus || 0) || c.amount || 0) - (c.spending || 0),
+          LikeHandler: c.likeHandler || 'None',
+          LikeCost: c.likeCost !== undefined ? c.likeCost : (c.spending || 0),
           InvoiceSent: c.invoiceSent || 'Yes',
           PaymentStatus: c.status || 'Pending',
           PaymentDate: c.paymentReceivedDate || '',

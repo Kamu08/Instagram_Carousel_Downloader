@@ -35,6 +35,8 @@ export interface CollabItem {
   amount: number; // Total Amount = basePay + bonus
   spending: number; // Spend
   netProfit: number; // amount - spending
+  likeHandler?: string; // "Prince" | "Shivani" | "Other" | "None"
+  likeCost?: number; // Like / Engagement cost or payout (defaults to spending)
   invoiceSent: InvoiceStatus;
   status: PaymentStatus;
   paymentReceivedDate?: string; // "YYYY-MM-DD" or "DD-MM-YYYY"
@@ -45,6 +47,12 @@ export interface CollabItem {
   currency: Currency;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface LikeHandlerStat {
+  name: string;
+  postsCount: number;
+  totalCost: number;
 }
 
 export interface CollabMonthSummary {

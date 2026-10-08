@@ -25,6 +25,9 @@ import {
   FileText,
   Calendar,
   CreditCard,
+  Users,
+  Heart,
+  Crown,
 } from 'lucide-react';
 import {
   CollabItem,
@@ -36,6 +39,7 @@ import {
   PaymentMode,
   GoogleSheetSyncConfig,
   CollabMonthSummary,
+  LikeHandlerStat,
 } from '@/lib/collab-types';
 import {
   getSavedCollabs,
@@ -45,8 +49,10 @@ import {
   getUniqueMonths,
   calculateMonthSummary,
   calculateAllMonthsSummary,
+  calculateLikeHandlersStats,
   formatMonthLabel,
   getMonthName,
+  getCurrentMonthKey,
 } from '@/lib/collab-storage';
 
 interface CollabManagerModalProps {
@@ -58,26 +64,20 @@ const COLLAB_TYPES: CollabType[] = [
   'Fixed',
   'Bonus',
   'Performance',
-  'Barter',
-  'Retainer',
   'Other',
 ];
 
 const DELIVERABLE_TYPES: DeliverableType[] = [
   'Single Post',
   'Carousel',
-  'Repost',
   'Video / Reel',
-  'Newsletter',
-  'Bundle',
+  'Repost',
   'Other',
 ];
 
 const PAYMENT_MODES: PaymentMode[] = [
   'UPI',
   'Bank Transfer',
-  'Stripe',
-  'PayPal',
   'Other',
 ];
 
@@ -181,6 +181,7 @@ const GOOGLE_SCRIPT_CODE = `function doPost(e) {
       var headers = [
         "Brand", "Campaign", "Collaboration Type", "Deliverable Type", "Deliverable",
         "Posted Date", "Base Pay", "Bonus", "Total Amount", "Spend", "Net Profit",
+        "Like Handler", "Like Cost",
         "Invoice Sent", "Payment Status", "Payment Date", "Status", "Content Link", "Notes", "Collab ID"
       ];
 
@@ -219,7 +220,7 @@ const GOOGLE_SCRIPT_CODE = `function doPost(e) {
         for (var i = 1; i < existingData.length; i++) {
           var rBrand = String(existingData[i][0] || "").trim().toLowerCase();
           var rDate = String(existingData[i][5] || "").trim();
-          var rId = String(existingData[i][17] || "").trim();
+          var rId = String(existingData[i][19] || existingData[i][17] || "").trim();
           
           if (rId) {
             rowLookup["id_" + rId] = i + 1;
@@ -249,6 +250,8 @@ const GOOGLE_SCRIPT_CODE = `function doPost(e) {
             c.TotalAmount,
             c.Spend,
             c.NetProfit,
+            c.LikeHandler || "None",
+            c.LikeCost || c.Spend || 0,
             c.InvoiceSent,
             c.PaymentStatus,
             c.PaymentDate,
@@ -405,9 +408,10 @@ const GOOGLE_SCRIPT_CODE = `function doPost(e) {
 export function CollabManagerModal({ isOpen, onClose }: CollabManagerModalProps) {
   const [collabs, setCollabs] = useState<CollabItem[]>([]);
   const [activeView, setActiveView] = useState<'month' | 'analytics'>('month');
-  const [selectedMonth, setSelectedMonth] = useState<string>('2026-07');
+  const [selectedMonth, setSelectedMonth] = useState<string>(() => getCurrentMonthKey());
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | PaymentStatus>('all');
+  const [likeFilter, setLikeFilter] = useState<'all' | 'Prince' | 'Shivani' | 'Others' | 'None'>('all');
   const [expandedRowId, setExpandedRowId] = useState<string | null>(null);
 
   // Add / Edit Form State
@@ -420,13 +424,20 @@ export function CollabManagerModal({ isOpen, onClose }: CollabManagerModalProps)
   const [formCollabType, setFormCollabType] = useState<CollabType>('Fixed');
   const [formDeliverableType, setFormDeliverableType] = useState<DeliverableType>('Single Post');
   const [formDeliverableQty, setFormDeliverableQty] = useState('Single');
-  const [formDate, setFormDate] = useState('2026-09-05');
+  const [formDate, setFormDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [formBasePay, setFormBasePay] = useState<number>(3000);
   const [formBonus, setFormBonus] = useState<number>(0);
   const [formSpending, setFormSpending] = useState<number>(0);
-  const [formInvoiceSent, setFormInvoiceSent] = useState<InvoiceStatus>('Yes');
-  const [formStatus, setFormStatus] = useState<PaymentStatus>('Paid');
-  const [formPaymentDate, setFormPaymentDate] = useState('');
+  const [formLikeHandlerType, setFormLikeHandlerType] = useState<'None' | 'Prince' | 'Shivani' | 'Other'>('None');
+  const [formCustomHandlerName, setFormCustomHandlerName] = useState('');
+  const [formLikeCost, setFormLikeCost] = useState<number>(0);
+  const [formInvoiceSent, setFormInvoiceSent] = useState<InvoiceStatus>('No');
+  const [formStatus, setFormStatus] = useState<PaymentStatus>('Pending');
+  const [formPaymentDate, setFormPaymentDate] = useState(() => {
+    const d = new Date();
+    d.setDate(d.getDate() + 15);
+    return d.toISOString().slice(0, 10);
+  });
   const [formPaymentMode, setFormPaymentMode] = useState<PaymentMode>('UPI');
   const [formWorkStatus, setFormWorkStatus] = useState<WorkStatus>('Completed');
   const [formPostUrl, setFormPostUrl] = useState('');
@@ -439,21 +450,15 @@ export function CollabManagerModal({ isOpen, onClose }: CollabManagerModalProps)
   const [syncStatusMsg, setSyncStatusMsg] = useState<{ text: string; isError: boolean } | null>(null);
   const [copiedCode, setCopiedCode] = useState(false);
 
-  // Load from local storage
+  // Load from local storage and default to current month
   useEffect(() => {
     if (isOpen) {
       const items = getSavedCollabs();
       setCollabs(items);
       const conf = getSyncConfig();
       setSyncConfig(conf);
-      if (items.length > 0 && selectedMonth === '2026-07') {
-        const unique = getUniqueMonths(items);
-        if (unique.includes('2026-07')) {
-          setSelectedMonth('2026-07');
-        } else if (unique.length > 0) {
-          setSelectedMonth(unique[0]);
-        }
-      }
+      const curMonth = getCurrentMonthKey();
+      setSelectedMonth(curMonth);
     }
   }, [isOpen]);
 
@@ -461,6 +466,8 @@ export function CollabManagerModal({ isOpen, onClose }: CollabManagerModalProps)
   const months = useMemo(() => getUniqueMonths(collabs), [collabs]);
   const monthSummary = useMemo(() => calculateMonthSummary(collabs, selectedMonth), [collabs, selectedMonth]);
   const allMonthsSummary = useMemo(() => calculateAllMonthsSummary(collabs), [collabs]);
+  const monthLikeStats = useMemo(() => calculateLikeHandlersStats(collabs, selectedMonth), [collabs, selectedMonth]);
+  const overallLikeStats = useMemo(() => calculateLikeHandlersStats(collabs, 'all'), [collabs]);
 
   // Overall totals for Analytics tab
   const overallTotals = useMemo(() => {
@@ -494,11 +501,19 @@ export function CollabManagerModal({ isOpen, onClose }: CollabManagerModalProps)
         searchQuery === '' ||
         c.brandName.toLowerCase().includes(searchQuery.toLowerCase()) ||
         (c.campaign && c.campaign.toLowerCase().includes(searchQuery.toLowerCase())) ||
+        (c.likeHandler && c.likeHandler.toLowerCase().includes(searchQuery.toLowerCase())) ||
         (c.notes && c.notes.toLowerCase().includes(searchQuery.toLowerCase()));
       const matchStatus = statusFilter === 'all' || c.status === statusFilter;
-      return matchMonth && matchSearch && matchStatus;
+      const matchLike =
+        likeFilter === 'all' ||
+        (likeFilter === 'Prince' && c.likeHandler?.toLowerCase().includes('prince')) ||
+        (likeFilter === 'Shivani' && c.likeHandler?.toLowerCase().includes('shivani')) ||
+        (likeFilter === 'Others' && c.likeHandler && !c.likeHandler.toLowerCase().includes('prince') && !c.likeHandler.toLowerCase().includes('shivani') && c.likeHandler.toLowerCase() !== 'none') ||
+        (likeFilter === 'None' && (!c.likeHandler || c.likeHandler.toLowerCase() === 'none'));
+
+      return matchMonth && matchSearch && matchStatus && matchLike;
     });
-  }, [collabs, selectedMonth, searchQuery, statusFilter]);
+  }, [collabs, selectedMonth, searchQuery, statusFilter, likeFilter]);
 
   if (!isOpen) return null;
 
@@ -510,14 +525,21 @@ export function CollabManagerModal({ isOpen, onClose }: CollabManagerModalProps)
     setFormCollabType('Fixed');
     setFormDeliverableType('Single Post');
     setFormDeliverableQty('Single');
-    const defaultDate = selectedMonth !== 'all' ? `${selectedMonth}-15` : new Date().toISOString().slice(0, 10);
-    setFormDate(defaultDate);
+    const todayStr = new Date().toISOString().slice(0, 10);
+    setFormDate(todayStr);
     setFormBasePay(3000);
     setFormBonus(0);
     setFormSpending(0);
-    setFormInvoiceSent('Yes');
-    setFormStatus('Paid');
-    setFormPaymentDate(defaultDate);
+    setFormLikeHandlerType('None');
+    setFormCustomHandlerName('');
+    setFormLikeCost(0);
+    setFormInvoiceSent('No');
+    setFormStatus('Pending');
+    
+    const payD = new Date();
+    payD.setDate(payD.getDate() + 15);
+    setFormPaymentDate(payD.toISOString().slice(0, 10));
+
     setFormPaymentMode('UPI');
     setFormWorkStatus('Completed');
     setFormPostUrl('');
@@ -536,6 +558,23 @@ export function CollabManagerModal({ isOpen, onClose }: CollabManagerModalProps)
     setFormBasePay(item.basePay || 0);
     setFormBonus(item.bonus || 0);
     setFormSpending(item.spending || 0);
+
+    // Parse like handler
+    if (item.likeHandler && item.likeHandler.toLowerCase().includes('prince')) {
+      setFormLikeHandlerType('Prince');
+      setFormCustomHandlerName('');
+    } else if (item.likeHandler && item.likeHandler.toLowerCase().includes('shivani')) {
+      setFormLikeHandlerType('Shivani');
+      setFormCustomHandlerName('');
+    } else if (item.likeHandler && item.likeHandler.toLowerCase() !== 'none') {
+      setFormLikeHandlerType('Other');
+      setFormCustomHandlerName(item.likeHandler);
+    } else {
+      setFormLikeHandlerType('None');
+      setFormCustomHandlerName('');
+    }
+    setFormLikeCost(item.likeCost !== undefined ? item.likeCost : (item.spending || 0));
+
     setFormInvoiceSent(item.invoiceSent || 'Yes');
     setFormStatus(item.status || 'Paid');
     setFormPaymentDate(item.paymentReceivedDate || '');
@@ -555,6 +594,13 @@ export function CollabManagerModal({ isOpen, onClose }: CollabManagerModalProps)
     const spend = Number(formSpending || 0);
     const net = totalAmount - spend;
 
+    let finalHandler = 'None';
+    if (formLikeHandlerType === 'Prince') finalHandler = 'Prince';
+    else if (formLikeHandlerType === 'Shivani') finalHandler = 'Shivani';
+    else if (formLikeHandlerType === 'Other') finalHandler = formCustomHandlerName.trim() || 'New Guy';
+
+    const finalLikeCost = formLikeHandlerType !== 'None' ? Number(formLikeCost || spend) : 0;
+
     if (editingItem) {
       const updated = collabs.map((c) =>
         c.id === editingItem.id
@@ -572,6 +618,8 @@ export function CollabManagerModal({ isOpen, onClose }: CollabManagerModalProps)
               amount: totalAmount,
               spending: spend,
               netProfit: net,
+              likeHandler: finalHandler,
+              likeCost: finalLikeCost,
               invoiceSent: formInvoiceSent,
               status: formStatus,
               paymentReceivedDate: formPaymentDate || undefined,
@@ -600,6 +648,8 @@ export function CollabManagerModal({ isOpen, onClose }: CollabManagerModalProps)
         amount: totalAmount,
         spending: spend,
         netProfit: net,
+        likeHandler: finalHandler,
+        likeCost: finalLikeCost,
         invoiceSent: formInvoiceSent,
         status: formStatus,
         paymentReceivedDate: formPaymentDate || undefined,
@@ -703,25 +753,25 @@ export function CollabManagerModal({ isOpen, onClose }: CollabManagerModalProps)
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/75 backdrop-blur-sm p-3 sm:p-5 overflow-y-auto animate-fadeIn">
-      <div className="bg-white dark:bg-zinc-950 text-slate-900 dark:text-slate-100 w-full max-w-6xl max-h-[92vh] rounded-2xl border border-slate-200 dark:border-zinc-800 shadow-2xl flex flex-col overflow-hidden my-auto transition-colors">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-md p-3 sm:p-5 overflow-y-auto animate-fadeIn">
+      <div className="bg-[#0c0c0e] text-zinc-100 w-full max-w-6xl max-h-[92vh] rounded-2xl border border-amber-500/25 dark:border-rose-500/20 shadow-2xl shadow-rose-950/50 flex flex-col overflow-hidden my-auto transition-colors">
         
-        {/* Sleek Executive Header */}
-        <div className="px-5 py-4 border-b border-slate-200 dark:border-zinc-800 bg-slate-900 text-white flex items-center justify-between shrink-0">
+        {/* Sleek Executive Header (Obsidian & Sunset Rose/Gold) */}
+        <div className="px-5 py-4 border-b border-rose-500/20 bg-gradient-to-r from-[#0c0c0e] via-[#161218] to-[#0c0c0e] text-white flex items-center justify-between shrink-0">
           <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 flex items-center justify-center">
+            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-amber-500/25 via-rose-500/20 to-pink-500/20 text-amber-400 border border-amber-500/40 flex items-center justify-center shadow-sm shadow-amber-500/10">
               <DollarSign className="w-5 h-5 stroke-[2.5]" />
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h2 className="font-semibold text-base tracking-tight text-white">
+                <h2 className="font-bold text-base tracking-tight bg-gradient-to-r from-amber-200 via-rose-200 to-pink-200 bg-clip-text text-transparent">
                   Kamal - LinkedIn Collabs 2026
                 </h2>
-                <span className="px-2 py-0.5 rounded-md bg-emerald-500/20 text-emerald-300 text-[11px] font-medium border border-emerald-500/30">
+                <span className="px-2 py-0.5 rounded-md bg-rose-500/15 text-rose-300 text-[11px] font-medium border border-rose-500/30">
                   Live Sheet Sync
                 </span>
               </div>
-              <p className="text-xs text-slate-400 font-normal">
+              <p className="text-xs text-zinc-400 font-normal">
                 Monthly revenue tracking, brand CRM &amp; analytics
               </p>
             </div>
@@ -732,10 +782,10 @@ export function CollabManagerModal({ isOpen, onClose }: CollabManagerModalProps)
               href="https://docs.google.com/spreadsheets/d/1OCUbKY7KmoIlpJ6Os4sNZPhKZCl-ZfLJF4rfrtO96IQ/edit"
               target="_blank"
               rel="noopener noreferrer"
-              className="px-3.5 py-1.5 rounded-lg bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border border-emerald-500/30 text-xs font-medium flex items-center gap-1.5 transition-colors cursor-pointer"
+              className="px-3.5 py-1.5 rounded-lg bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 border border-amber-500/30 text-xs font-medium flex items-center gap-1.5 transition-colors cursor-pointer shadow-xs"
               title="Open Google Sheet in new tab"
             >
-              <ExternalLink className="w-3.5 h-3.5 text-emerald-400" />
+              <ExternalLink className="w-3.5 h-3.5 text-amber-400" />
               <span className="hidden sm:inline">Open Sheet</span>
             </a>
 
@@ -743,12 +793,12 @@ export function CollabManagerModal({ isOpen, onClose }: CollabManagerModalProps)
               type="button"
               onClick={handleSyncToGoogleSheet}
               disabled={isSyncing}
-              className="px-3.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-medium flex items-center gap-1.5 transition-colors cursor-pointer disabled:opacity-50"
+              className="px-3.5 py-1.5 rounded-lg bg-zinc-900 hover:bg-zinc-800 text-zinc-200 border border-zinc-700/80 text-xs font-medium flex items-center gap-1.5 transition-colors cursor-pointer disabled:opacity-50"
             >
               {isSyncing ? (
-                <Loader2 className="w-3.5 h-3.5 animate-spin text-emerald-400" />
+                <Loader2 className="w-3.5 h-3.5 animate-spin text-rose-400" />
               ) : (
-                <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-400" />
+                <FileSpreadsheet className="w-3.5 h-3.5 text-rose-400" />
               )}
               <span className="hidden sm:inline">Sync Sheet</span>
             </button>
@@ -756,7 +806,7 @@ export function CollabManagerModal({ isOpen, onClose }: CollabManagerModalProps)
             <button
               type="button"
               onClick={handleOpenAdd}
-              className="px-3.5 py-1.5 rounded-lg bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-semibold text-xs flex items-center gap-1.5 transition-colors cursor-pointer shadow-sm"
+              className="px-3.5 py-1.5 rounded-lg bg-gradient-to-r from-amber-500 via-rose-500 to-pink-600 hover:from-amber-400 hover:via-rose-400 hover:to-pink-500 text-slate-950 font-bold text-xs flex items-center gap-1.5 transition-all cursor-pointer shadow-md shadow-rose-950/40"
             >
               <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
               <span>Add Deal</span>
@@ -765,7 +815,7 @@ export function CollabManagerModal({ isOpen, onClose }: CollabManagerModalProps)
             <button
               type="button"
               onClick={onClose}
-              className="w-8 h-8 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 flex items-center justify-center transition-colors cursor-pointer ml-1"
+              className="w-8 h-8 rounded-lg text-zinc-400 hover:text-white hover:bg-zinc-800 flex items-center justify-center transition-colors cursor-pointer ml-1"
             >
               <X className="w-4 h-4" />
             </button>
@@ -777,12 +827,12 @@ export function CollabManagerModal({ isOpen, onClose }: CollabManagerModalProps)
           <div
             className={`px-5 py-2 text-xs font-medium flex items-center justify-between border-b ${
               syncStatusMsg.isError
-                ? 'bg-rose-50 text-rose-800 border-rose-200 dark:bg-rose-950/40 dark:text-rose-300 dark:border-rose-900/50'
-                : 'bg-emerald-50 text-emerald-800 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-900/50'
+                ? 'bg-rose-950/40 text-rose-300 border-rose-900/50'
+                : 'bg-amber-950/40 text-amber-300 border-amber-900/50'
             }`}
           >
             <div className="flex items-center gap-2">
-              <ShieldCheck className="w-4 h-4 shrink-0" />
+              <ShieldCheck className="w-4 h-4 shrink-0 text-amber-400" />
               <span>{syncStatusMsg.text}</span>
             </div>
             <button
@@ -796,7 +846,7 @@ export function CollabManagerModal({ isOpen, onClose }: CollabManagerModalProps)
         )}
 
         {/* Navigation & Controls Bar */}
-        <div className="px-5 py-3 border-b border-slate-100 dark:border-zinc-800/80 bg-slate-50/50 dark:bg-zinc-900/30 flex flex-wrap items-center justify-between gap-3 shrink-0">
+        <div className="px-5 py-3 border-b border-zinc-800/80 bg-[#100e14] flex flex-wrap items-center justify-between gap-3 shrink-0">
           
           {/* Main Views (Monthly Analytics vs Month CRMs) */}
           <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar max-w-full">
@@ -804,17 +854,17 @@ export function CollabManagerModal({ isOpen, onClose }: CollabManagerModalProps)
             <button
               type="button"
               onClick={() => setActiveView('analytics')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5 transition-all cursor-pointer shrink-0 ${
+              className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer shrink-0 ${
                 activeView === 'analytics'
-                  ? 'bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900 shadow-sm'
-                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 hover:bg-slate-200/50 dark:hover:bg-zinc-800/50'
+                  ? 'bg-gradient-to-r from-amber-500 to-rose-500 text-slate-950 shadow-md shadow-amber-950/40'
+                  : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/60'
               }`}
             >
-              <BarChart3 className="w-3.5 h-3.5 text-emerald-400" />
+              <BarChart3 className="w-3.5 h-3.5 text-current" />
               <span>Monthly Analytics</span>
             </button>
 
-            <div className="w-[1px] h-4 bg-slate-200 dark:bg-zinc-800 mx-1 shrink-0" />
+            <div className="w-[1px] h-4 bg-zinc-800 mx-1 shrink-0" />
 
             {/* Individual Month CRM Tabs */}
             {months.map((m) => {
@@ -828,10 +878,10 @@ export function CollabManagerModal({ isOpen, onClose }: CollabManagerModalProps)
                     setSelectedMonth(m);
                     setActiveView('month');
                   }}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all cursor-pointer shrink-0 ${
+                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer shrink-0 ${
                     isSelected
-                      ? 'bg-emerald-500 text-slate-950 font-semibold shadow-sm'
-                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 hover:bg-slate-200/50 dark:hover:bg-zinc-800/50'
+                      ? 'bg-gradient-to-r from-amber-500 to-rose-500 text-slate-950 shadow-md shadow-amber-950/40'
+                      : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/60'
                   }`}
                 >
                   {label}
@@ -845,10 +895,10 @@ export function CollabManagerModal({ isOpen, onClose }: CollabManagerModalProps)
                 setSelectedMonth('all');
                 setActiveView('month');
               }}
-              className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all cursor-pointer shrink-0 ${
+              className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer shrink-0 ${
                 activeView === 'month' && selectedMonth === 'all'
-                  ? 'bg-emerald-500 text-slate-950 font-semibold shadow-sm'
-                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 hover:bg-slate-200/50 dark:hover:bg-zinc-800/50'
+                  ? 'bg-gradient-to-r from-amber-500 to-rose-500 text-slate-950 shadow-md shadow-amber-950/40'
+                  : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/60'
               }`}
             >
               All Time
@@ -859,9 +909,9 @@ export function CollabManagerModal({ isOpen, onClose }: CollabManagerModalProps)
           <button
             type="button"
             onClick={() => setIsSyncSettingsOpen(!isSyncSettingsOpen)}
-            className="text-xs font-medium text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-zinc-800 hover:bg-white dark:hover:bg-zinc-900 transition-colors cursor-pointer"
+            className="text-xs font-medium text-zinc-400 hover:text-amber-300 flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-zinc-800 hover:border-amber-500/30 hover:bg-zinc-900 transition-colors cursor-pointer"
           >
-            <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-500" />
+            <FileSpreadsheet className="w-3.5 h-3.5 text-rose-400" />
             <span>Webhook Setup</span>
             {isSyncSettingsOpen ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
           </button>
@@ -869,17 +919,17 @@ export function CollabManagerModal({ isOpen, onClose }: CollabManagerModalProps)
 
         {/* Google Sheet Webhook Settings Drawer */}
         {isSyncSettingsOpen && (
-          <div className="p-4 bg-slate-50 dark:bg-zinc-900/60 border-b border-slate-200 dark:border-zinc-800 space-y-2.5 text-xs animate-fadeIn shrink-0">
+          <div className="p-4 bg-[#141219] border-b border-zinc-800 space-y-2.5 text-xs animate-fadeIn shrink-0">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-              <span className="font-semibold text-slate-800 dark:text-slate-200">
+              <span className="font-semibold text-zinc-200">
                 Google Apps Script Deployment URL
               </span>
               <button
                 type="button"
                 onClick={handleCopyGoogleScript}
-                className="px-3 py-1.5 rounded-lg bg-white dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 font-medium text-xs text-slate-700 dark:text-slate-300 flex items-center gap-1.5 hover:bg-slate-50 transition-colors cursor-pointer"
+                className="px-3 py-1.5 rounded-lg bg-zinc-800 border border-zinc-700 font-medium text-xs text-zinc-300 flex items-center gap-1.5 hover:bg-zinc-700 transition-colors cursor-pointer"
               >
-                <Copy className="w-3.5 h-3.5" />
+                <Copy className="w-3.5 h-3.5 text-amber-400" />
                 <span>{copiedCode ? '✓ Script Copied' : 'Copy Multi-Sheet Script'}</span>
               </button>
             </div>
@@ -894,92 +944,164 @@ export function CollabManagerModal({ isOpen, onClose }: CollabManagerModalProps)
                   saveSyncConfig(next);
                 }}
                 placeholder="https://script.google.com/macros/s/.../exec"
-                className="flex-1 px-3 py-2 rounded-lg border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 font-mono text-xs text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                className="flex-1 px-3 py-2 rounded-lg border border-zinc-700 bg-zinc-900 font-mono text-xs text-zinc-100 focus:outline-none focus:ring-1 focus:ring-amber-500"
               />
               <button
                 type="button"
                 onClick={handleSyncToGoogleSheet}
                 disabled={isSyncing || !syncConfig.webhookUrl}
-                className="px-4 py-2 rounded-lg bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-semibold text-xs shrink-0 transition-colors cursor-pointer disabled:opacity-50"
+                className="px-4 py-2 rounded-lg bg-gradient-to-r from-amber-500 to-rose-500 hover:from-amber-400 hover:to-rose-400 text-slate-950 font-bold text-xs shrink-0 transition-all cursor-pointer disabled:opacity-50"
               >
                 Test &amp; Sync
               </button>
             </div>
 
-            <p className="text-[11px] text-slate-500 dark:text-slate-400">
+            <p className="text-[11px] text-zinc-400">
               Paste the script in your Google Sheet under <b>Extensions &gt; Apps Script</b> &rarr; <b>Deploy &gt; Web app (Anyone)</b>. It will auto-create and update your <code>Monthly Analytics</code> and monthly sheets.
             </p>
           </div>
         )}
 
         {/* Body Content */}
-        <div className="flex-1 overflow-y-auto no-scrollbar p-5 space-y-5">
+        <div className="flex-1 overflow-y-auto no-scrollbar p-5 space-y-5 bg-[#0c0c0e]">
           
           {/* VIEW 1: MONTHLY ANALYTICS */}
           {activeView === 'analytics' ? (
             <div className="space-y-5 animate-fadeIn">
-              {/* Financial KPI Cards (5 Sections) */}
+              {/* Financial KPI Cards (5 Sections - Sunset Gold/Rose Luxury Glow) */}
               <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3.5">
                 {/* 1. Total Revenue */}
-                <div className="p-4 rounded-xl bg-slate-50 dark:bg-zinc-900/40 border border-slate-200/80 dark:border-zinc-800">
-                  <span className="text-xs font-medium text-slate-500 dark:text-slate-400">Total Revenue</span>
-                  <p className="font-semibold text-2xl text-slate-900 dark:text-slate-100 mt-1">
+                <div className="p-4 rounded-2xl bg-gradient-to-br from-amber-500/10 via-zinc-900/70 to-zinc-950 border border-amber-500/25 shadow-sm">
+                  <span className="text-xs font-semibold text-amber-200/75">Total Revenue</span>
+                  <p className="font-bold text-2xl text-amber-300 mt-1">
                     ₹{overallTotals.totalRevenue.toLocaleString('en-IN')}
                   </p>
-                  <span className="text-[11px] text-slate-500">{overallTotals.totalCollabs} Deals Across All Months</span>
+                  <span className="text-[11px] text-amber-400/70">{overallTotals.totalCollabs} Deals Across All Months</span>
                 </div>
 
                 {/* 2. Total Spend */}
-                <div className="p-4 rounded-xl bg-slate-50 dark:bg-zinc-900/40 border border-slate-200/80 dark:border-zinc-800">
-                  <span className="text-xs font-medium text-slate-500 dark:text-slate-400">Total Spend</span>
-                  <p className="font-semibold text-2xl text-rose-600 dark:text-rose-400 mt-1">
+                <div className="p-4 rounded-2xl bg-gradient-to-br from-rose-500/10 via-zinc-900/70 to-zinc-950 border border-rose-500/25 shadow-sm">
+                  <span className="text-xs font-semibold text-rose-200/75">Total Spend</span>
+                  <p className="font-bold text-2xl text-rose-400 mt-1">
                     ₹{overallTotals.totalSpend.toLocaleString('en-IN')}
                   </p>
-                  <span className="text-[11px] text-slate-500">Production &amp; Outsource Costs</span>
+                  <span className="text-[11px] text-rose-300/70">Production &amp; Outsource Costs</span>
                 </div>
 
-                {/* 3. Net Profit */}
-                <div className="p-4 rounded-xl bg-slate-50 dark:bg-zinc-900/40 border border-slate-200/80 dark:border-zinc-800">
-                  <span className="text-xs font-medium text-slate-500 dark:text-slate-400">Net Profit</span>
-                  <p className="font-semibold text-2xl text-emerald-600 dark:text-emerald-400 mt-1">
+                {/* 3. Net Profit (Hero Card) */}
+                <div className="p-4 rounded-2xl bg-gradient-to-br from-amber-500/20 via-rose-500/15 to-zinc-950 border border-amber-500/40 shadow-md shadow-rose-950/30">
+                  <span className="text-xs font-bold bg-gradient-to-r from-amber-300 to-rose-300 bg-clip-text text-transparent">Net Profit (Hero)</span>
+                  <p className="font-extrabold text-2xl bg-gradient-to-r from-amber-200 via-rose-200 to-pink-200 bg-clip-text text-transparent mt-1">
                     ₹{overallTotals.totalProfit.toLocaleString('en-IN')}
                   </p>
-                  <span className="text-[11px] text-emerald-600 dark:text-emerald-400 font-medium">Take-Home Profit</span>
+                  <span className="text-[11px] text-rose-300 font-semibold">Take-Home Profit</span>
                 </div>
 
                 {/* 4. Amount Collected */}
-                <div className="p-4 rounded-xl bg-slate-50 dark:bg-zinc-900/40 border border-slate-200/80 dark:border-zinc-800">
-                  <span className="text-xs font-medium text-slate-500 dark:text-slate-400">Amount Collected</span>
-                  <p className="font-semibold text-2xl text-emerald-600 dark:text-emerald-400 mt-1">
+                <div className="p-4 rounded-2xl bg-gradient-to-br from-emerald-500/10 via-zinc-900/70 to-zinc-950 border border-emerald-500/25 shadow-sm">
+                  <span className="text-xs font-semibold text-emerald-200/75">Amount Collected</span>
+                  <p className="font-bold text-2xl text-emerald-400 mt-1">
                     ₹{overallTotals.amountCollected.toLocaleString('en-IN')}
                   </p>
-                  <span className="text-[11px] text-emerald-600 dark:text-emerald-400 font-medium">
+                  <span className="text-[11px] text-emerald-400/80 font-medium">
                     {overallTotals.paidCount} Deals Paid
                   </span>
                 </div>
 
                 {/* 5. Amount Need to be Collected */}
-                <div className="p-4 rounded-xl bg-slate-50 dark:bg-zinc-900/40 border border-slate-200/80 dark:border-zinc-800 col-span-2 sm:col-span-1">
-                  <span className="text-xs font-medium text-slate-500 dark:text-slate-400">Amount to Collect</span>
-                  <p className="font-semibold text-2xl text-amber-500 dark:text-amber-400 mt-1">
+                <div className="p-4 rounded-2xl bg-gradient-to-br from-orange-500/10 via-zinc-900/70 to-zinc-950 border border-orange-500/25 shadow-sm col-span-2 sm:col-span-1">
+                  <span className="text-xs font-semibold text-orange-200/75">Amount to Collect</span>
+                  <p className="font-bold text-2xl text-orange-400 mt-1">
                     ₹{overallTotals.amountPending.toLocaleString('en-IN')}
                   </p>
-                  <span className="text-[11px] text-amber-600 dark:text-amber-400 font-medium">
+                  <span className="text-[11px] text-orange-400/80 font-medium">
                     {overallTotals.pendingCount} Deals Pending
                   </span>
                 </div>
               </div>
 
+              {/* Likes Management & Handlers Summary (Prince / Shivani / Others) */}
+              <div className="p-4 rounded-2xl bg-[#110f16] border border-amber-500/20 space-y-3 shadow-sm">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-amber-500/25 to-rose-500/25 text-amber-300 border border-amber-500/40 flex items-center justify-center text-sm font-bold shadow-xs">
+                      👑
+                    </div>
+                    <div>
+                      <h4 className="font-bold text-xs bg-gradient-to-r from-amber-200 via-rose-200 to-pink-200 bg-clip-text text-transparent">
+                        Like &amp; Engagement Handlers (All-Time Payouts)
+                      </h4>
+                      <p className="text-[11px] text-zinc-400">
+                        {overallLikeStats.totalPostsWithLikes} Posts with Managed Likes • Total Likes Spend: <span className="text-amber-300 font-semibold">₹{overallLikeStats.totalLikesCost.toLocaleString('en-IN')}</span>
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  {/* Prince Card */}
+                  <div className="p-3.5 rounded-xl bg-gradient-to-r from-amber-500/15 via-amber-600/10 to-transparent border border-amber-500/35 flex items-center justify-between shadow-xs">
+                    <div className="flex items-center gap-2.5">
+                      <span className="text-xl">👑</span>
+                      <div>
+                        <span className="font-bold text-xs text-amber-300">Prince</span>
+                        <span className="block text-[11px] text-amber-200/70">{overallLikeStats.prince.postsCount} Posts Managed</span>
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <span className="font-bold text-sm text-amber-300">
+                        ₹{overallLikeStats.prince.totalCost.toLocaleString('en-IN')}
+                      </span>
+                      <span className="block text-[10px] text-amber-400/60 uppercase tracking-wider font-semibold">Payout</span>
+                    </div>
+                  </div>
+
+                  {/* Shivani Card */}
+                  <div className="p-3.5 rounded-xl bg-gradient-to-r from-rose-500/15 via-pink-600/10 to-transparent border border-rose-500/35 flex items-center justify-between shadow-xs">
+                    <div className="flex items-center gap-2.5">
+                      <span className="text-xl">🌸</span>
+                      <div>
+                        <span className="font-bold text-xs text-rose-300">Shivani</span>
+                        <span className="block text-[11px] text-rose-200/70">{overallLikeStats.shivani.postsCount} Posts Managed</span>
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <span className="font-bold text-sm text-rose-300">
+                        ₹{overallLikeStats.shivani.totalCost.toLocaleString('en-IN')}
+                      </span>
+                      <span className="block text-[10px] text-rose-400/60 uppercase tracking-wider font-semibold">Payout</span>
+                    </div>
+                  </div>
+
+                  {/* Others Card */}
+                  <div className="p-3.5 rounded-xl bg-gradient-to-r from-orange-500/15 via-zinc-800/20 to-transparent border border-orange-500/35 flex items-center justify-between shadow-xs">
+                    <div className="flex items-center gap-2.5">
+                      <span className="text-xl">👤</span>
+                      <div>
+                        <span className="font-bold text-xs text-orange-300">Others / New Guy</span>
+                        <span className="block text-[11px] text-orange-200/70">{overallLikeStats.others.postsCount} Posts Managed</span>
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <span className="font-bold text-sm text-orange-300">
+                        ₹{overallLikeStats.others.totalCost.toLocaleString('en-IN')}
+                      </span>
+                      <span className="block text-[10px] text-orange-400/60 uppercase tracking-wider font-semibold">Payout</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
               {/* Clean Analytics Table */}
-              <div className="rounded-xl border border-slate-200 dark:border-zinc-800 overflow-hidden bg-white dark:bg-zinc-950">
-                <div className="px-4 py-3 bg-slate-50 dark:bg-zinc-900/60 border-b border-slate-200 dark:border-zinc-800 flex items-center justify-between">
+              <div className="rounded-2xl border border-zinc-800 overflow-hidden bg-[#100e14] shadow-sm">
+                <div className="px-4 py-3 bg-[#15131b] border-b border-zinc-800 flex items-center justify-between">
                   <div className="flex items-center gap-2">
-                    <BarChart3 className="w-4 h-4 text-emerald-500" />
-                    <h3 className="font-semibold text-xs tracking-wide uppercase text-slate-700 dark:text-slate-300">
+                    <BarChart3 className="w-4 h-4 text-amber-400" />
+                    <h3 className="font-bold text-xs tracking-wider uppercase bg-gradient-to-r from-amber-300 via-rose-300 to-pink-300 bg-clip-text text-transparent">
                       Monthly Analytics Breakdown
                     </h3>
                   </div>
-                  <span className="text-xs text-slate-500">
+                  <span className="text-[11px] text-zinc-400">
                     Auto-computed totals
                   </span>
                 </div>
@@ -987,45 +1109,45 @@ export function CollabManagerModal({ isOpen, onClose }: CollabManagerModalProps)
                 <div className="overflow-x-auto no-scrollbar">
                   <table className="w-full text-left text-xs border-collapse">
                     <thead>
-                      <tr className="bg-slate-100/75 dark:bg-zinc-900 text-slate-600 dark:text-slate-400 font-medium text-[11px] border-b border-slate-200 dark:border-zinc-800">
-                        <th className="px-4 py-3 font-semibold">Month</th>
-                        <th className="px-4 py-3 text-center font-semibold">Deals</th>
-                        <th className="px-4 py-3 text-right font-semibold">Revenue</th>
-                        <th className="px-4 py-3 text-right font-semibold">Spend</th>
-                        <th className="px-4 py-3 text-right font-semibold">Net Profit</th>
-                        <th className="px-4 py-3 text-right font-semibold">Collected</th>
-                        <th className="px-4 py-3 text-right font-semibold">Pending</th>
-                        <th className="px-4 py-3 text-center font-semibold">Action</th>
+                      <tr className="bg-[#181520] text-zinc-400 font-semibold text-[11px] border-b border-zinc-800">
+                        <th className="px-4 py-3">Month</th>
+                        <th className="px-4 py-3 text-center">Deals</th>
+                        <th className="px-4 py-3 text-right">Revenue</th>
+                        <th className="px-4 py-3 text-right">Spend</th>
+                        <th className="px-4 py-3 text-right">Net Profit</th>
+                        <th className="px-4 py-3 text-right">Collected</th>
+                        <th className="px-4 py-3 text-right">Pending</th>
+                        <th className="px-4 py-3 text-center">Action</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-slate-100 dark:divide-zinc-800/60 font-medium">
+                    <tbody className="divide-y divide-zinc-800/70 font-medium">
                       {allMonthsSummary.map((m) => (
-                        <tr key={m.month} className="hover:bg-slate-50/80 dark:hover:bg-zinc-900/40 transition-colors">
-                          <td className="px-4 py-3 font-semibold text-slate-900 dark:text-slate-100">
+                        <tr key={m.month} className="hover:bg-rose-500/5 transition-colors">
+                          <td className="px-4 py-3 font-semibold text-zinc-100">
                             {m.monthName}
                           </td>
-                          <td className="px-4 py-3 text-center text-slate-700 dark:text-slate-300">
+                          <td className="px-4 py-3 text-center text-zinc-300">
                             {m.totalCollabs}
                           </td>
-                          <td className="px-4 py-3 text-right font-semibold text-slate-900 dark:text-slate-100">
+                          <td className="px-4 py-3 text-right font-bold text-amber-300">
                             ₹{m.totalRevenue.toLocaleString('en-IN')}
                           </td>
-                          <td className="px-4 py-3 text-right text-rose-600 dark:text-rose-400">
+                          <td className="px-4 py-3 text-right text-rose-400">
                             {m.totalSpend > 0 ? `₹${m.totalSpend.toLocaleString('en-IN')}` : '-'}
                           </td>
-                          <td className="px-4 py-3 text-right font-semibold text-emerald-600 dark:text-emerald-400">
+                          <td className="px-4 py-3 text-right font-bold bg-gradient-to-r from-amber-300 to-rose-300 bg-clip-text text-transparent">
                             ₹{m.totalProfit.toLocaleString('en-IN')}
                           </td>
-                          <td className="px-4 py-3 text-right font-semibold text-emerald-600 dark:text-emerald-400">
+                          <td className="px-4 py-3 text-right font-semibold text-emerald-400">
                             ₹{(m.amountCollected || 0).toLocaleString('en-IN')}
                           </td>
                           <td className="px-4 py-3 text-right">
                             {m.amountPending > 0 ? (
-                              <span className="px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300 text-[11px] font-medium">
+                              <span className="px-2 py-0.5 rounded-full bg-orange-500/15 text-orange-300 border border-orange-500/30 text-[11px] font-semibold">
                                 ₹{m.amountPending.toLocaleString('en-IN')}
                               </span>
                             ) : (
-                              <span className="text-slate-400">-</span>
+                              <span className="text-zinc-500">-</span>
                             )}
                           </td>
                           <td className="px-4 py-3 text-center">
@@ -1035,7 +1157,7 @@ export function CollabManagerModal({ isOpen, onClose }: CollabManagerModalProps)
                                 setSelectedMonth(m.month);
                                 setActiveView('month');
                               }}
-                              className="px-2.5 py-1 rounded-md bg-slate-100 dark:bg-zinc-800 hover:bg-emerald-500 hover:text-slate-950 text-slate-700 dark:text-slate-300 text-[11px] font-medium transition-colors cursor-pointer"
+                              className="px-2.5 py-1 rounded-lg bg-zinc-800 hover:bg-gradient-to-r hover:from-amber-500 hover:to-rose-500 hover:text-slate-950 text-zinc-300 text-[11px] font-semibold transition-all cursor-pointer"
                             >
                               Open CRM &rarr;
                             </button>
@@ -1044,15 +1166,15 @@ export function CollabManagerModal({ isOpen, onClose }: CollabManagerModalProps)
                       ))}
 
                       {/* Total Summary Row */}
-                      <tr className="bg-slate-50 dark:bg-zinc-900 font-semibold text-xs border-t border-slate-200 dark:border-zinc-700">
-                        <td className="px-4 py-3 text-slate-900 dark:text-slate-100">TOTAL</td>
-                        <td className="px-4 py-3 text-center">{overallTotals.totalCollabs}</td>
-                        <td className="px-4 py-3 text-right text-slate-900 dark:text-slate-100">₹{overallTotals.totalRevenue.toLocaleString('en-IN')}</td>
-                        <td className="px-4 py-3 text-right text-rose-600 dark:text-rose-400">₹{overallTotals.totalSpend.toLocaleString('en-IN')}</td>
-                        <td className="px-4 py-3 text-right text-emerald-600 dark:text-emerald-400">₹{overallTotals.totalProfit.toLocaleString('en-IN')}</td>
-                        <td className="px-4 py-3 text-right text-emerald-600 dark:text-emerald-400">₹{overallTotals.amountCollected.toLocaleString('en-IN')}</td>
-                        <td className="px-4 py-3 text-right text-amber-600 dark:text-amber-400 font-medium">₹{overallTotals.amountPending.toLocaleString('en-IN')}</td>
-                        <td className="px-4 py-3 text-center text-slate-400 text-[11px]">All Months</td>
+                      <tr className="bg-[#181520] font-bold text-xs border-t-2 border-amber-500/30">
+                        <td className="px-4 py-3 text-amber-300">TOTAL</td>
+                        <td className="px-4 py-3 text-center text-zinc-200">{overallTotals.totalCollabs}</td>
+                        <td className="px-4 py-3 text-right text-amber-300">₹{overallTotals.totalRevenue.toLocaleString('en-IN')}</td>
+                        <td className="px-4 py-3 text-right text-rose-400">₹{overallTotals.totalSpend.toLocaleString('en-IN')}</td>
+                        <td className="px-4 py-3 text-right bg-gradient-to-r from-amber-300 to-rose-300 bg-clip-text text-transparent">₹{overallTotals.totalProfit.toLocaleString('en-IN')}</td>
+                        <td className="px-4 py-3 text-right text-emerald-400">₹{overallTotals.amountCollected.toLocaleString('en-IN')}</td>
+                        <td className="px-4 py-3 text-right text-orange-400">₹{overallTotals.amountPending.toLocaleString('en-IN')}</td>
+                        <td className="px-4 py-3 text-center text-zinc-400 text-[11px]">All Months</td>
                       </tr>
                     </tbody>
                   </table>
@@ -1062,70 +1184,143 @@ export function CollabManagerModal({ isOpen, onClose }: CollabManagerModalProps)
           ) : (
             /* VIEW 2: INDIVIDUAL MONTH CRM TABLE */
             <div className="space-y-5 animate-fadeIn">
-              {/* Monthly KPI Cards (5 Sections) */}
+              {/* Monthly KPI Cards (5 Sections - Sunset Rose/Gold Palette) */}
               <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3.5">
                 {/* 1. Revenue */}
-                <div className="p-4 rounded-xl bg-slate-50 dark:bg-zinc-900/40 border border-slate-200/80 dark:border-zinc-800">
-                  <span className="text-xs font-medium text-slate-500 dark:text-slate-400">Revenue ({monthSummary.monthLabel})</span>
-                  <p className="font-semibold text-2xl text-slate-900 dark:text-slate-100 mt-1">
+                <div className="p-4 rounded-2xl bg-gradient-to-br from-amber-500/10 via-zinc-900/70 to-zinc-950 border border-amber-500/25 shadow-sm">
+                  <span className="text-xs font-semibold text-amber-200/75">Revenue ({monthSummary.monthLabel})</span>
+                  <p className="font-bold text-2xl text-amber-300 mt-1">
                     ₹{monthSummary.totalRevenue.toLocaleString('en-IN')}
                   </p>
-                  <span className="text-[11px] text-slate-500">{monthSummary.totalCollabs} Deals Recorded</span>
+                  <span className="text-[11px] text-amber-400/70">{monthSummary.totalCollabs} Deals Recorded</span>
                 </div>
 
                 {/* 2. Spend / Expenses */}
-                <div className="p-4 rounded-xl bg-slate-50 dark:bg-zinc-900/40 border border-slate-200/80 dark:border-zinc-800">
-                  <span className="text-xs font-medium text-slate-500 dark:text-slate-400">Spend / Expenses</span>
-                  <p className="font-semibold text-2xl text-rose-600 dark:text-rose-400 mt-1">
+                <div className="p-4 rounded-2xl bg-gradient-to-br from-rose-500/10 via-zinc-900/70 to-zinc-950 border border-rose-500/25 shadow-sm">
+                  <span className="text-xs font-semibold text-rose-200/75">Spend / Expenses</span>
+                  <p className="font-bold text-2xl text-rose-400 mt-1">
                     ₹{monthSummary.totalSpend.toLocaleString('en-IN')}
                   </p>
-                  <span className="text-[11px] text-slate-500">Outsourced &amp; Production</span>
+                  <span className="text-[11px] text-rose-300/70">Outsourced &amp; Production</span>
                 </div>
 
-                {/* 3. Net Profit */}
-                <div className="p-4 rounded-xl bg-slate-50 dark:bg-zinc-900/40 border border-slate-200/80 dark:border-zinc-800">
-                  <span className="text-xs font-medium text-slate-500 dark:text-slate-400">Net Profit</span>
-                  <p className="font-semibold text-2xl text-emerald-600 dark:text-emerald-400 mt-1">
+                {/* 3. Net Profit (Hero) */}
+                <div className="p-4 rounded-2xl bg-gradient-to-br from-amber-500/20 via-rose-500/15 to-zinc-950 border border-amber-500/40 shadow-md shadow-rose-950/30">
+                  <span className="text-xs font-bold bg-gradient-to-r from-amber-300 to-rose-300 bg-clip-text text-transparent">Net Profit</span>
+                  <p className="font-extrabold text-2xl bg-gradient-to-r from-amber-200 via-rose-200 to-pink-200 bg-clip-text text-transparent mt-1">
                     ₹{monthSummary.totalProfit.toLocaleString('en-IN')}
                   </p>
-                  <span className="text-[11px] text-emerald-600 dark:text-emerald-400 font-medium">
+                  <span className="text-[11px] text-rose-300 font-semibold">
                     Margin: {monthSummary.totalRevenue > 0 ? Math.round((monthSummary.totalProfit / monthSummary.totalRevenue) * 100) : 0}%
                   </span>
                 </div>
 
                 {/* 4. Amount Collected */}
-                <div className="p-4 rounded-xl bg-slate-50 dark:bg-zinc-900/40 border border-slate-200/80 dark:border-zinc-800">
-                  <span className="text-xs font-medium text-slate-500 dark:text-slate-400">Amount Collected</span>
-                  <p className="font-semibold text-2xl text-emerald-600 dark:text-emerald-400 mt-1">
+                <div className="p-4 rounded-2xl bg-gradient-to-br from-emerald-500/10 via-zinc-900/70 to-zinc-950 border border-emerald-500/25 shadow-sm">
+                  <span className="text-xs font-semibold text-emerald-200/75">Amount Collected</span>
+                  <p className="font-bold text-2xl text-emerald-400 mt-1">
                     ₹{monthSummary.amountCollected.toLocaleString('en-IN')}
                   </p>
-                  <span className="text-[11px] text-emerald-600 dark:text-emerald-400 font-medium">
+                  <span className="text-[11px] text-emerald-400/80 font-medium">
                     {monthSummary.paidCount} Deals Paid
                   </span>
                 </div>
 
                 {/* 5. Amount Need to be Collected */}
-                <div className="p-4 rounded-xl bg-slate-50 dark:bg-zinc-900/40 border border-slate-200/80 dark:border-zinc-800 col-span-2 sm:col-span-1">
-                  <span className="text-xs font-medium text-slate-500 dark:text-slate-400">Amount to Collect</span>
-                  <p className="font-semibold text-2xl text-amber-500 dark:text-amber-400 mt-1">
+                <div className="p-4 rounded-2xl bg-gradient-to-br from-orange-500/10 via-zinc-900/70 to-zinc-950 border border-orange-500/25 shadow-sm col-span-2 sm:col-span-1">
+                  <span className="text-xs font-semibold text-orange-200/75">Amount to Collect</span>
+                  <p className="font-bold text-2xl text-orange-400 mt-1">
                     ₹{monthSummary.amountPending.toLocaleString('en-IN')}
                   </p>
-                  <span className="text-[11px] text-amber-600 dark:text-amber-400 font-medium">
+                  <span className="text-[11px] text-orange-400/80 font-medium">
                     {monthSummary.pendingCount} Deals Pending
                   </span>
+                </div>
+              </div>
+
+              {/* Likes Handlers Summary Bar & Quick-Filter Selector */}
+              <div className="p-3.5 rounded-2xl bg-[#110f16] border border-amber-500/25 flex flex-col md:flex-row items-start md:items-center justify-between gap-3 shadow-xs">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-6 h-6 rounded-md bg-gradient-to-br from-amber-500/25 to-rose-500/25 text-amber-300 border border-amber-500/40 flex items-center justify-center text-xs shadow-xs">
+                    👑
+                  </div>
+                  <div>
+                    <span className="font-bold text-xs text-zinc-100">
+                      Likes Handlers ({monthSummary.monthLabel}):
+                    </span>
+                    <span className="text-[11px] text-zinc-400 ml-1.5">
+                      {monthLikeStats.totalPostsWithLikes} Posts with Likes • Total Payout: <span className="text-amber-300 font-semibold">₹{monthLikeStats.totalLikesCost.toLocaleString('en-IN')}</span>
+                    </span>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <span className="text-[11px] text-zinc-400 mr-1">Filter:</span>
+                  {/* All filter */}
+                  <button
+                    type="button"
+                    onClick={() => setLikeFilter('all')}
+                    className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                      likeFilter === 'all'
+                        ? 'bg-gradient-to-r from-amber-500 to-rose-500 text-slate-950 shadow-xs'
+                        : 'bg-zinc-800 text-zinc-300 hover:bg-zinc-700'
+                    }`}
+                  >
+                    All ({monthSummary.totalCollabs})
+                  </button>
+
+                  {/* Prince chip */}
+                  <button
+                    type="button"
+                    onClick={() => setLikeFilter(likeFilter === 'Prince' ? 'all' : 'Prince')}
+                    className={`px-2.5 py-1 rounded-lg text-xs font-semibold flex items-center gap-1.5 border transition-all cursor-pointer ${
+                      likeFilter === 'Prince'
+                        ? 'bg-amber-500 text-slate-950 border-amber-400 shadow-xs'
+                        : 'bg-amber-500/15 text-amber-300 border-amber-500/35 hover:bg-amber-500/25'
+                    }`}
+                  >
+                    <span>👑 Prince: {monthLikeStats.prince.postsCount} (₹{monthLikeStats.prince.totalCost.toLocaleString('en-IN')})</span>
+                  </button>
+
+                  {/* Shivani chip */}
+                  <button
+                    type="button"
+                    onClick={() => setLikeFilter(likeFilter === 'Shivani' ? 'all' : 'Shivani')}
+                    className={`px-2.5 py-1 rounded-lg text-xs font-semibold flex items-center gap-1.5 border transition-all cursor-pointer ${
+                      likeFilter === 'Shivani'
+                        ? 'bg-rose-500 text-slate-950 border-rose-400 shadow-xs'
+                        : 'bg-rose-500/15 text-rose-300 border-rose-500/35 hover:bg-rose-500/25'
+                    }`}
+                  >
+                    <span>🌸 Shivani: {monthLikeStats.shivani.postsCount} (₹{monthLikeStats.shivani.totalCost.toLocaleString('en-IN')})</span>
+                  </button>
+
+                  {monthLikeStats.others.postsCount > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => setLikeFilter(likeFilter === 'Others' ? 'all' : 'Others')}
+                      className={`px-2.5 py-1 rounded-lg text-xs font-semibold flex items-center gap-1.5 border transition-all cursor-pointer ${
+                        likeFilter === 'Others'
+                          ? 'bg-orange-500 text-slate-950 border-orange-400 shadow-xs'
+                          : 'bg-orange-500/15 text-orange-300 border-orange-500/35 hover:bg-orange-500/25'
+                      }`}
+                    >
+                      <span>👤 Others: {monthLikeStats.others.postsCount} (₹{monthLikeStats.others.totalCost.toLocaleString('en-IN')})</span>
+                    </button>
+                  )}
                 </div>
               </div>
 
               {/* Table Toolbar */}
               <div className="flex flex-col sm:flex-row items-center justify-between gap-3">
                 <div className="relative w-full sm:w-72">
-                  <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                  <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" />
                   <input
                     type="text"
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
                     placeholder="Search brand, campaign, notes..."
-                    className="w-full pl-9 pr-3 py-2 rounded-lg border border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-xs text-slate-900 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                    className="w-full pl-9 pr-3 py-2 rounded-xl border border-zinc-800 bg-[#121017] text-xs text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-amber-400 focus:ring-1 focus:ring-amber-400"
                   />
                 </div>
 
@@ -1133,7 +1328,7 @@ export function CollabManagerModal({ isOpen, onClose }: CollabManagerModalProps)
                   <select
                     value={statusFilter}
                     onChange={(e) => setStatusFilter(e.target.value as any)}
-                    className="px-3 py-2 rounded-lg border border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-xs text-slate-800 dark:text-slate-200 focus:outline-none cursor-pointer"
+                    className="px-3 py-2 rounded-xl border border-zinc-800 bg-[#121017] text-xs text-zinc-200 focus:outline-none cursor-pointer"
                   >
                     <option value="all">All Statuses</option>
                     <option value="Paid">Paid</option>
@@ -1141,30 +1336,43 @@ export function CollabManagerModal({ isOpen, onClose }: CollabManagerModalProps)
                     <option value="Invoiced">Invoiced</option>
                     <option value="Cancelled">Cancelled</option>
                   </select>
+
+                  <select
+                    value={likeFilter}
+                    onChange={(e) => setLikeFilter(e.target.value as any)}
+                    className="px-3 py-2 rounded-xl border border-zinc-800 bg-[#121017] text-xs text-zinc-200 focus:outline-none cursor-pointer"
+                  >
+                    <option value="all">All Handlers</option>
+                    <option value="Prince">👑 Prince</option>
+                    <option value="Shivani">🌸 Shivani</option>
+                    <option value="Others">👤 Others / New</option>
+                    <option value="None">No Likes Assigned</option>
+                  </select>
                 </div>
               </div>
 
-              {/* Clean Brand Deals Table with Expandable Rows */}
-              <div className="rounded-xl border border-slate-200 dark:border-zinc-800 overflow-hidden bg-white dark:bg-zinc-950">
+              {/* Clean Brand Deals Table with Expandable Rows (Obsidian & Sunset Rose/Gold) */}
+              <div className="rounded-2xl border border-zinc-800 overflow-hidden bg-[#100e14] shadow-sm">
                 <div className="overflow-x-auto no-scrollbar">
                   <table className="w-full text-left text-xs border-collapse">
                     <thead>
-                      <tr className="bg-slate-100/75 dark:bg-zinc-900 text-slate-600 dark:text-slate-400 font-medium text-[11px] border-b border-slate-200 dark:border-zinc-800">
-                        <th className="px-4 py-3 font-semibold">Brand &amp; Deliverable</th>
-                        <th className="px-4 py-3 font-semibold">Date</th>
-                        <th className="px-4 py-3 text-right font-semibold">Pay Breakdown</th>
-                        <th className="px-4 py-3 text-right font-semibold">Total Fee</th>
-                        <th className="px-4 py-3 text-right font-semibold">Spend</th>
-                        <th className="px-4 py-3 text-right font-semibold">Net Profit</th>
-                        <th className="px-4 py-3 text-center font-semibold">Payment Status</th>
-                        <th className="px-4 py-3 text-right font-semibold">Actions</th>
+                      <tr className="bg-[#181520] text-zinc-400 font-semibold text-[11px] border-b border-zinc-800">
+                        <th className="px-4 py-3">Brand &amp; Deliverable</th>
+                        <th className="px-4 py-3">Date</th>
+                        <th className="px-4 py-3 text-right">Pay Breakdown</th>
+                        <th className="px-4 py-3 text-right">Total Fee</th>
+                        <th className="px-4 py-3 text-right">Spend</th>
+                        <th className="px-4 py-3 text-right">Net Profit</th>
+                        <th className="px-4 py-3 text-center">Likes Handler</th>
+                        <th className="px-4 py-3 text-center">Payment Status</th>
+                        <th className="px-4 py-3 text-right">Actions</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-slate-100 dark:divide-zinc-800/60 font-medium">
+                    <tbody className="divide-y divide-zinc-800/70 font-medium">
                       {filteredCollabs.length === 0 ? (
                         <tr>
-                          <td colSpan={8} className="p-8 text-center text-xs text-slate-500">
-                            No collaborations found. Click <b>Add Deal</b> to record a brand collaboration!
+                          <td colSpan={9} className="p-8 text-center text-xs text-zinc-500">
+                            No collaborations found matching the filters. Click <b className="text-amber-300">Add Deal</b> to record a brand collaboration!
                           </td>
                         </tr>
                       ) : (
@@ -1174,11 +1382,15 @@ export function CollabManagerModal({ isOpen, onClose }: CollabManagerModalProps)
                           const net = totalAmt - (item.spending || 0);
                           const isExpanded = expandedRowId === item.id;
 
+                          const isPrince = item.likeHandler?.toLowerCase().includes('prince');
+                          const isShivani = item.likeHandler?.toLowerCase().includes('shivani');
+                          const hasOtherHandler = item.likeHandler && item.likeHandler.toLowerCase() !== 'none' && !isPrince && !isShivani;
+
                           return (
                             <React.Fragment key={item.id}>
                               <tr
-                                className={`hover:bg-slate-50/80 dark:hover:bg-zinc-900/40 transition-colors ${
-                                  isExpanded ? 'bg-slate-50/90 dark:bg-zinc-900/50' : ''
+                                className={`hover:bg-rose-500/5 transition-colors ${
+                                  isExpanded ? 'bg-[#181520]' : ''
                                 }`}
                               >
                                 {/* Brand & Deliverable */}
@@ -1187,27 +1399,27 @@ export function CollabManagerModal({ isOpen, onClose }: CollabManagerModalProps)
                                     <button
                                       type="button"
                                       onClick={() => setExpandedRowId(isExpanded ? null : item.id)}
-                                      className="text-slate-400 hover:text-slate-600 cursor-pointer"
+                                      className="text-zinc-500 hover:text-zinc-300 cursor-pointer"
                                       title="Toggle details"
                                     >
                                       {isExpanded ? (
-                                        <ChevronDown className="w-3.5 h-3.5" />
+                                        <ChevronDown className="w-3.5 h-3.5 text-amber-400" />
                                       ) : (
                                         <ChevronRight className="w-3.5 h-3.5" />
                                       )}
                                     </button>
                                     <div>
                                       <div className="flex items-center gap-1.5">
-                                        <span className="font-semibold text-slate-900 dark:text-slate-100 text-sm">
+                                        <span className="font-bold text-zinc-100 text-sm">
                                           {item.brandName}
                                         </span>
-                                        <span className="px-2 py-0.5 rounded text-[10px] font-medium bg-slate-100 dark:bg-zinc-800 text-slate-600 dark:text-slate-300">
+                                        <span className="px-2 py-0.5 rounded-md text-[10px] font-semibold bg-zinc-800 text-zinc-300 border border-zinc-700">
                                           {item.deliverableType || 'Post'}
                                           {item.deliverableQty && item.deliverableQty !== 'Single' ? ` (${item.deliverableQty})` : ''}
                                         </span>
                                       </div>
                                       {item.campaign && (
-                                        <p className="text-[11px] text-slate-500 font-normal">
+                                        <p className="text-[11px] text-zinc-400 font-normal">
                                           {item.campaign}
                                         </p>
                                       )}
@@ -1216,7 +1428,7 @@ export function CollabManagerModal({ isOpen, onClose }: CollabManagerModalProps)
                                 </td>
 
                                 {/* Date */}
-                                <td className="px-4 py-3.5 text-xs text-slate-600 dark:text-slate-400">
+                                <td className="px-4 py-3.5 text-xs text-zinc-300 font-mono">
                                   {item.scheduledDate || '-'}
                                 </td>
 
@@ -1224,27 +1436,55 @@ export function CollabManagerModal({ isOpen, onClose }: CollabManagerModalProps)
                                 <td className="px-4 py-3.5 text-right text-xs">
                                   {item.bonus > 0 ? (
                                     <div className="space-y-0.5">
-                                      <span className="text-slate-700 dark:text-slate-300 font-medium">₹{item.basePay.toLocaleString('en-IN')}</span>
-                                      <span className="block text-[10px] text-blue-600 dark:text-blue-400">+₹{item.bonus.toLocaleString('en-IN')} bonus</span>
+                                      <span className="text-zinc-200 font-medium">₹{item.basePay.toLocaleString('en-IN')}</span>
+                                      <span className="block text-[10px] text-amber-400">+₹{item.bonus.toLocaleString('en-IN')} bonus</span>
                                     </div>
                                   ) : (
-                                    <span className="text-slate-600 dark:text-slate-400">₹{(item.basePay || item.amount).toLocaleString('en-IN')}</span>
+                                    <span className="text-zinc-300">₹{(item.basePay || item.amount).toLocaleString('en-IN')}</span>
                                   )}
                                 </td>
 
                                 {/* Total Amount */}
-                                <td className="px-4 py-3.5 font-semibold text-right text-sm text-slate-900 dark:text-slate-100">
+                                <td className="px-4 py-3.5 font-bold text-right text-sm text-amber-300">
                                   ₹{totalAmt.toLocaleString('en-IN')}
                                 </td>
 
                                 {/* Spend */}
-                                <td className="px-4 py-3.5 text-right text-xs text-rose-600 dark:text-rose-400">
+                                <td className="px-4 py-3.5 text-right text-xs text-rose-400 font-medium">
                                   {item.spending ? `₹${item.spending.toLocaleString('en-IN')}` : '-'}
                                 </td>
 
                                 {/* Net Profit */}
-                                <td className="px-4 py-3.5 font-semibold text-right text-sm text-emerald-600 dark:text-emerald-400">
+                                <td className="px-4 py-3.5 font-bold text-right text-sm bg-gradient-to-r from-amber-300 to-rose-300 bg-clip-text text-transparent">
                                   ₹{net.toLocaleString('en-IN')}
+                                </td>
+
+                                {/* Likes Handler */}
+                                <td className="px-4 py-3.5 text-center">
+                                  {isPrince ? (
+                                    <span className="px-2 py-0.5 rounded-md text-[11px] font-semibold bg-amber-500/15 text-amber-300 border border-amber-500/35 inline-flex items-center gap-1 shadow-xs">
+                                      <span>👑 Prince</span>
+                                      {(item.likeCost || item.spending) > 0 && (
+                                        <span className="text-[10px] opacity-80">(₹{(item.likeCost || item.spending).toLocaleString('en-IN')})</span>
+                                      )}
+                                    </span>
+                                  ) : isShivani ? (
+                                    <span className="px-2 py-0.5 rounded-md text-[11px] font-semibold bg-rose-500/15 text-rose-300 border border-rose-500/35 inline-flex items-center gap-1 shadow-xs">
+                                      <span>🌸 Shivani</span>
+                                      {(item.likeCost || item.spending) > 0 && (
+                                        <span className="text-[10px] opacity-80">(₹{(item.likeCost || item.spending).toLocaleString('en-IN')})</span>
+                                      )}
+                                    </span>
+                                  ) : hasOtherHandler ? (
+                                    <span className="px-2 py-0.5 rounded-md text-[11px] font-semibold bg-orange-500/15 text-orange-300 border border-orange-500/35 inline-flex items-center gap-1 shadow-xs">
+                                      <span>👤 {item.likeHandler}</span>
+                                      {(item.likeCost || item.spending) > 0 && (
+                                        <span className="text-[10px] opacity-80">(₹{(item.likeCost || item.spending).toLocaleString('en-IN')})</span>
+                                      )}
+                                    </span>
+                                  ) : (
+                                    <span className="text-zinc-500 text-xs">-</span>
+                                  )}
                                 </td>
 
                                 {/* Payment Status (1-Click Toggle) */}
@@ -1252,10 +1492,10 @@ export function CollabManagerModal({ isOpen, onClose }: CollabManagerModalProps)
                                   <button
                                     type="button"
                                     onClick={() => handleTogglePaymentStatus(item)}
-                                    className={`px-2.5 py-1 rounded-full text-[11px] font-medium inline-flex items-center gap-1 transition-all cursor-pointer ${
+                                    className={`px-2.5 py-1 rounded-full text-[11px] font-semibold inline-flex items-center gap-1 transition-all cursor-pointer shadow-xs ${
                                       isPaid
-                                        ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800'
-                                        : 'bg-amber-50 text-amber-700 dark:bg-amber-950/50 dark:text-amber-300 border border-amber-200 dark:border-amber-800'
+                                        ? 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/35 hover:bg-emerald-500/25'
+                                        : 'bg-amber-500/15 text-amber-300 border border-amber-500/35 hover:bg-amber-500/25'
                                     }`}
                                     title="Click to toggle Paid/Pending"
                                   >
@@ -1281,7 +1521,7 @@ export function CollabManagerModal({ isOpen, onClose }: CollabManagerModalProps)
                                         href={item.postUrl}
                                         target="_blank"
                                         rel="noreferrer"
-                                        className="p-1 rounded-md text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-zinc-800 transition-colors"
+                                        className="p-1 rounded-lg text-zinc-400 hover:text-amber-300 hover:bg-zinc-800 transition-colors"
                                         title="View Post"
                                       >
                                         <ExternalLink className="w-3.5 h-3.5" />
@@ -1290,7 +1530,7 @@ export function CollabManagerModal({ isOpen, onClose }: CollabManagerModalProps)
                                     <button
                                       type="button"
                                       onClick={() => handleOpenEdit(item)}
-                                      className="p-1 rounded-md text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-zinc-800 transition-colors cursor-pointer"
+                                      className="p-1 rounded-lg text-zinc-400 hover:text-amber-300 hover:bg-zinc-800 transition-colors cursor-pointer"
                                       title="Edit"
                                     >
                                       <Edit2 className="w-3.5 h-3.5" />
@@ -1298,7 +1538,7 @@ export function CollabManagerModal({ isOpen, onClose }: CollabManagerModalProps)
                                     <button
                                       type="button"
                                       onClick={() => handleDeleteCollab(item.id)}
-                                      className="p-1 rounded-md text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/30 transition-colors cursor-pointer"
+                                      className="p-1 rounded-lg text-zinc-400 hover:text-rose-400 hover:bg-rose-950/40 transition-colors cursor-pointer"
                                       title="Delete"
                                     >
                                       <Trash2 className="w-3.5 h-3.5" />
@@ -1309,38 +1549,44 @@ export function CollabManagerModal({ isOpen, onClose }: CollabManagerModalProps)
 
                               {/* Expandable Details Drawer */}
                               {isExpanded && (
-                                <tr className="bg-slate-50/60 dark:bg-zinc-900/30 border-b border-slate-100 dark:border-zinc-800">
-                                  <td colSpan={8} className="px-6 py-3 text-xs">
-                                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-[11px]">
+                                <tr className="bg-[#14121a] border-b border-zinc-800">
+                                  <td colSpan={9} className="px-6 py-3.5 text-xs">
+                                    <div className="grid grid-cols-2 sm:grid-cols-5 gap-4 text-[11px]">
                                       <div>
-                                        <span className="text-slate-400 block mb-0.5">Invoice Sent</span>
-                                        <span className="font-semibold text-slate-700 dark:text-slate-300">
-                                          {item.invoiceSent || 'Yes'}
+                                        <span className="text-zinc-500 block mb-0.5">Likes Handler</span>
+                                        <span className="font-bold text-amber-300">
+                                          {item.likeHandler || 'None'} {item.likeCost ? `(₹${item.likeCost})` : ''}
                                         </span>
                                       </div>
                                       <div>
-                                        <span className="text-slate-400 block mb-0.5">Payment Date</span>
-                                        <span className="font-semibold text-slate-700 dark:text-slate-300">
+                                        <span className="text-zinc-500 block mb-0.5">Invoice Sent</span>
+                                        <span className="font-semibold text-zinc-200">
+                                          {item.invoiceSent || 'No'}
+                                        </span>
+                                      </div>
+                                      <div>
+                                        <span className="text-zinc-500 block mb-0.5">Payment Date</span>
+                                        <span className="font-semibold text-zinc-200 font-mono">
                                           {item.paymentReceivedDate || '-'}
                                         </span>
                                       </div>
                                       <div>
-                                        <span className="text-slate-400 block mb-0.5">Payment Mode</span>
-                                        <span className="font-semibold text-slate-700 dark:text-slate-300">
+                                        <span className="text-zinc-500 block mb-0.5">Payment Mode</span>
+                                        <span className="font-semibold text-zinc-200">
                                           {item.paymentMode || 'UPI'}
                                         </span>
                                       </div>
                                       <div>
-                                        <span className="text-slate-400 block mb-0.5">Work Status</span>
-                                        <span className="font-semibold text-slate-700 dark:text-slate-300">
+                                        <span className="text-zinc-500 block mb-0.5">Work Status</span>
+                                        <span className="font-semibold text-zinc-200">
                                           {item.workStatus || 'Completed'}
                                         </span>
                                       </div>
                                     </div>
                                     {item.notes && (
-                                      <div className="mt-2.5 pt-2 border-t border-slate-200/50 dark:border-zinc-800">
-                                        <span className="text-slate-400 block text-[10px] mb-0.5">Notes &amp; Requirements</span>
-                                        <p className="text-slate-700 dark:text-slate-300">{item.notes}</p>
+                                      <div className="mt-2.5 pt-2.5 border-t border-zinc-800">
+                                        <span className="text-zinc-500 block text-[10px] mb-0.5 font-medium">Notes &amp; Requirements</span>
+                                        <p className="text-zinc-300">{item.notes}</p>
                                       </div>
                                     )}
                                   </td>
@@ -1358,18 +1604,18 @@ export function CollabManagerModal({ isOpen, onClose }: CollabManagerModalProps)
           )}
         </div>
 
-        {/* Clean Add / Edit Modal */}
+        {/* Clean Add / Edit Modal (Obsidian & Sunset Rose/Gold) */}
         {isFormOpen && (
-          <div className="fixed inset-0 z-60 flex items-center justify-center bg-slate-950/70 backdrop-blur-sm p-4 animate-fadeIn">
-            <div className="bg-white dark:bg-zinc-900 text-slate-900 dark:text-slate-100 w-full max-w-lg rounded-2xl border border-slate-200 dark:border-zinc-800 shadow-2xl p-5 max-h-[90vh] overflow-y-auto no-scrollbar">
-              <div className="flex items-center justify-between pb-3 border-b border-slate-200 dark:border-zinc-800 mb-4">
-                <h3 className="font-semibold text-base">
+          <div className="fixed inset-0 z-60 flex items-center justify-center bg-slate-950/85 backdrop-blur-md p-4 animate-fadeIn">
+            <div className="bg-[#0e0d12] text-zinc-100 w-full max-w-lg rounded-2xl border border-amber-500/30 shadow-2xl shadow-rose-950/70 p-5 max-h-[90vh] overflow-y-auto no-scrollbar">
+              <div className="flex items-center justify-between pb-3 border-b border-rose-500/20 mb-4">
+                <h3 className="font-bold text-base bg-gradient-to-r from-amber-200 via-rose-200 to-pink-200 bg-clip-text text-transparent">
                   {editingItem ? 'Edit Collaboration Deal' : 'Add New Brand Deal'}
                 </h3>
                 <button
                   type="button"
                   onClick={() => setIsFormOpen(false)}
-                  className="p-1 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-zinc-800 transition-colors cursor-pointer"
+                  className="p-1 rounded-lg text-zinc-400 hover:text-white hover:bg-zinc-800 transition-colors cursor-pointer"
                 >
                   <X className="w-4 h-4" />
                 </button>
@@ -1379,7 +1625,7 @@ export function CollabManagerModal({ isOpen, onClose }: CollabManagerModalProps)
                 {/* Brand & Campaign */}
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="block text-slate-600 dark:text-slate-400 mb-1 font-medium">
+                    <label className="block text-zinc-300 mb-1 font-medium">
                       Brand Name *
                     </label>
                     <input
@@ -1388,11 +1634,11 @@ export function CollabManagerModal({ isOpen, onClose }: CollabManagerModalProps)
                       value={formBrand}
                       onChange={(e) => setFormBrand(e.target.value)}
                       placeholder="e.g. Morphic, Matiks..."
-                      className="w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                      className="w-full px-3 py-2 rounded-xl border border-zinc-700/80 bg-[#17151e] text-zinc-100 focus:outline-none focus:border-amber-400 focus:ring-1 focus:ring-amber-400"
                     />
                   </div>
                   <div>
-                    <label className="block text-slate-600 dark:text-slate-400 mb-1 font-medium">
+                    <label className="block text-zinc-300 mb-1 font-medium">
                       Campaign / Topic (Optional)
                     </label>
                     <input
@@ -1400,174 +1646,314 @@ export function CollabManagerModal({ isOpen, onClose }: CollabManagerModalProps)
                       value={formCampaign}
                       onChange={(e) => setFormCampaign(e.target.value)}
                       placeholder="e.g. AI Carousel, Launch..."
-                      className="w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                      className="w-full px-3 py-2 rounded-xl border border-zinc-700/80 bg-[#17151e] text-zinc-100 focus:outline-none focus:border-amber-400 focus:ring-1 focus:ring-amber-400"
                     />
                   </div>
                 </div>
 
-                {/* Collab Type, Deliverable, Qty */}
-                <div className="grid grid-cols-3 gap-3">
+                {/* Deliverable & Collab Type */}
+                <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="block text-slate-600 dark:text-slate-400 mb-1 font-medium">
+                    <label className="block text-zinc-300 mb-1 font-medium">
+                      Deliverable Format
+                    </label>
+                    <select
+                      value={formDeliverableType}
+                      onChange={(e) => setFormDeliverableType(e.target.value as any)}
+                      className="w-full px-3 py-2 rounded-xl border border-zinc-700/80 bg-[#17151e] text-zinc-100 focus:outline-none"
+                    >
+                      {DELIVERABLE_TYPES.map((d) => (
+                        <option key={d} value={d} className="bg-[#17151e] text-zinc-100">{d}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-zinc-300 mb-1 font-medium">
                       Collab Type
                     </label>
                     <select
                       value={formCollabType}
                       onChange={(e) => setFormCollabType(e.target.value as any)}
-                      className="w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-slate-900 dark:text-slate-100 focus:outline-none"
+                      className="w-full px-3 py-2 rounded-xl border border-zinc-700/80 bg-[#17151e] text-zinc-100 focus:outline-none"
                     >
                       {COLLAB_TYPES.map((t) => (
-                        <option key={t} value={t}>{t}</option>
+                        <option key={t} value={t} className="bg-[#17151e] text-zinc-100">{t}</option>
                       ))}
                     </select>
-                  </div>
-
-                  <div>
-                    <label className="block text-slate-600 dark:text-slate-400 mb-1 font-medium">
-                      Deliverable
-                    </label>
-                    <select
-                      value={formDeliverableType}
-                      onChange={(e) => setFormDeliverableType(e.target.value as any)}
-                      className="w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-slate-900 dark:text-slate-100 focus:outline-none"
-                    >
-                      {DELIVERABLE_TYPES.map((d) => (
-                        <option key={d} value={d}>{d}</option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className="block text-slate-600 dark:text-slate-400 mb-1 font-medium">
-                      Quantity
-                    </label>
-                    <input
-                      type="text"
-                      value={formDeliverableQty}
-                      onChange={(e) => setFormDeliverableQty(e.target.value)}
-                      placeholder="e.g. Single, 2"
-                      className="w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-slate-900 dark:text-slate-100 focus:outline-none"
-                    />
                   </div>
                 </div>
 
                 {/* Date & Invoice */}
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="block text-slate-600 dark:text-slate-400 mb-1 font-medium">
-                      Scheduled Date
-                    </label>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="block text-zinc-300 font-medium">
+                        Post / Scheduled Date *
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const today = new Date().toISOString().slice(0, 10);
+                          setFormDate(today);
+                          const pDate = new Date();
+                          pDate.setDate(pDate.getDate() + 15);
+                          setFormPaymentDate(pDate.toISOString().slice(0, 10));
+                        }}
+                        className="text-[10px] px-1.5 py-0.5 rounded font-mono bg-zinc-800 text-amber-300 border border-amber-500/20 hover:bg-zinc-700 transition-colors cursor-pointer"
+                      >
+                        Today
+                      </button>
+                    </div>
                     <input
                       type="date"
+                      required
                       value={formDate}
-                      onChange={(e) => setFormDate(e.target.value)}
-                      className="w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-slate-900 dark:text-slate-100 focus:outline-none"
+                      onChange={(e) => {
+                        const newDate = e.target.value;
+                        setFormDate(newDate);
+                        if (newDate) {
+                          const d = new Date(newDate);
+                          if (!isNaN(d.getTime())) {
+                            d.setDate(d.getDate() + 15);
+                            setFormPaymentDate(d.toISOString().slice(0, 10));
+                          }
+                        }
+                      }}
+                      className="w-full px-3 py-2 rounded-xl border border-zinc-700/80 bg-[#17151e] text-zinc-100 focus:outline-none"
                     />
                   </div>
 
                   <div>
-                    <label className="block text-slate-600 dark:text-slate-400 mb-1 font-medium">
+                    <label className="block text-zinc-300 mb-1 font-medium">
                       Invoice Sent
                     </label>
                     <select
                       value={formInvoiceSent}
                       onChange={(e) => setFormInvoiceSent(e.target.value as any)}
-                      className="w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-slate-900 dark:text-slate-100 focus:outline-none"
+                      className="w-full px-3 py-2 rounded-xl border border-zinc-700/80 bg-[#17151e] text-zinc-100 focus:outline-none"
                     >
-                      <option value="Yes">Yes</option>
-                      <option value="No">No</option>
-                      <option value="Pending">Pending</option>
+                      <option value="No" className="bg-[#17151e]">No</option>
+                      <option value="Yes" className="bg-[#17151e]">Yes</option>
+                      <option value="Pending" className="bg-[#17151e]">Pending</option>
                     </select>
                   </div>
                 </div>
 
+                {/* Likes & Engagement Management (Prince / Shivani / Others) */}
+                <div className="p-3.5 bg-gradient-to-r from-amber-500/10 via-rose-500/5 to-transparent rounded-2xl border border-amber-500/30 space-y-2.5 shadow-xs">
+                  <div className="flex items-center justify-between">
+                    <label className="flex items-center gap-1.5 text-xs font-bold text-amber-300">
+                      <Heart className="w-3.5 h-3.5 text-rose-400 fill-rose-400" />
+                      <span>Post Likes &amp; Engagement Handler</span>
+                    </label>
+                    <span className="text-[10px] text-zinc-400 font-normal">
+                      For calculating payouts
+                    </span>
+                  </div>
+
+                  {/* Handler Segmented Buttons */}
+                  <div className="grid grid-cols-4 gap-1.5">
+                    {[
+                      { id: 'None', label: 'None' },
+                      { id: 'Prince', label: '👑 Prince' },
+                      { id: 'Shivani', label: '🌸 Shivani' },
+                      { id: 'Other', label: '➕ Other' },
+                    ].map((btn) => {
+                      const isActive = formLikeHandlerType === btn.id;
+                      return (
+                        <button
+                          key={btn.id}
+                          type="button"
+                          onClick={() => {
+                            setFormLikeHandlerType(btn.id as any);
+                            if (btn.id === 'None') {
+                              setFormLikeCost(0);
+                            } else if (formLikeCost === 0) {
+                              setFormLikeCost(200);
+                              if (formSpending === 0) setFormSpending(200);
+                            }
+                          }}
+                          className={`py-1.5 px-2 rounded-xl text-[11px] font-bold transition-all border cursor-pointer flex items-center justify-center gap-1 ${
+                            isActive
+                              ? 'bg-gradient-to-r from-amber-500 to-rose-500 text-slate-950 border-amber-400 shadow-xs'
+                              : 'bg-[#181620] text-zinc-300 border-zinc-700/80 hover:bg-zinc-800'
+                          }`}
+                        >
+                          {btn.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  {/* If "Other" is selected, show name input */}
+                  {formLikeHandlerType === 'Other' && (
+                    <div>
+                      <label className="block text-[10px] text-zinc-400 mb-1">
+                        Handler Name *
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        value={formCustomHandlerName}
+                        onChange={(e) => setFormCustomHandlerName(e.target.value)}
+                        placeholder="e.g. Rahul, Akash, Aman..."
+                        className="w-full px-3 py-1.5 rounded-xl border border-zinc-700/80 bg-[#17151e] text-zinc-100 text-xs focus:outline-none focus:border-amber-400"
+                      />
+                    </div>
+                  )}
+
+                  {/* Likes Management Cost / Payout */}
+                  {formLikeHandlerType !== 'None' && (
+                    <div className="pt-1">
+                      <div className="flex items-center justify-between mb-1">
+                        <label className="block text-[11px] text-zinc-300 font-medium">
+                          Likes Fee / Payout (₹)
+                        </label>
+                        <div className="flex items-center gap-1.5">
+                          {[100, 200, 600].map((preset) => (
+                            <button
+                              key={preset}
+                              type="button"
+                              onClick={() => {
+                                setFormLikeCost(preset);
+                                if (formSpending === 0 || formSpending === formLikeCost) {
+                                  setFormSpending(preset);
+                                }
+                              }}
+                              className={`px-2 py-0.5 text-[10px] font-mono rounded-lg font-bold transition-all cursor-pointer ${
+                                formLikeCost === preset
+                                  ? 'bg-gradient-to-r from-amber-500 to-rose-500 text-slate-950 shadow-xs'
+                                  : 'bg-zinc-800 text-zinc-300 hover:bg-amber-500/20 hover:text-amber-300 border border-zinc-700'
+                              }`}
+                            >
+                              ₹{preset}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                      <input
+                        type="number"
+                        min="0"
+                        value={formLikeCost}
+                        onChange={(e) => {
+                          const val = Number(e.target.value);
+                          setFormLikeCost(val);
+                          if (formSpending === 0 || formSpending === formLikeCost) {
+                            setFormSpending(val);
+                          }
+                        }}
+                        className="w-full px-2.5 py-1.5 rounded-xl border border-zinc-700/80 bg-[#17151e] font-mono text-xs text-amber-300 focus:outline-none"
+                      />
+                    </div>
+                  )}
+                </div>
+
                 {/* Financials: Base Pay, Bonus, Spend */}
-                <div className="p-3 bg-slate-50 dark:bg-zinc-800/50 rounded-xl border border-slate-200 dark:border-zinc-700/60 space-y-2">
+                <div className="p-3.5 bg-[#14121a] rounded-2xl border border-zinc-800 space-y-2">
                   <div className="grid grid-cols-3 gap-3">
                     <div>
-                      <label className="block text-[11px] text-slate-500 mb-1">
+                      <label className="block text-[11px] text-zinc-400 mb-1 font-medium">
                         Base Pay (₹)
                       </label>
                       <input
                         type="number"
                         value={formBasePay}
                         onChange={(e) => setFormBasePay(Number(e.target.value))}
-                        className="w-full px-2.5 py-1.5 rounded-md border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 font-mono text-xs text-slate-900 dark:text-slate-100 focus:outline-none"
+                        className="w-full px-2.5 py-1.5 rounded-lg border border-zinc-700 bg-[#1b1822] font-mono text-xs text-zinc-100 focus:outline-none"
                       />
                     </div>
 
                     <div>
-                      <label className="block text-[11px] text-slate-500 mb-1">
+                      <label className="block text-[11px] text-zinc-400 mb-1 font-medium">
                         Bonus (₹)
                       </label>
                       <input
                         type="number"
                         value={formBonus}
                         onChange={(e) => setFormBonus(Number(e.target.value))}
-                        className="w-full px-2.5 py-1.5 rounded-md border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 font-mono text-xs text-blue-600 dark:text-blue-400 focus:outline-none"
+                        className="w-full px-2.5 py-1.5 rounded-lg border border-zinc-700 bg-[#1b1822] font-mono text-xs text-amber-400 focus:outline-none"
                       />
                     </div>
 
                     <div>
-                      <label className="block text-[11px] text-slate-500 mb-1">
+                      <label className="block text-[11px] text-zinc-400 mb-1 font-medium">
                         Spend (₹)
                       </label>
                       <input
                         type="number"
                         value={formSpending}
                         onChange={(e) => setFormSpending(Number(e.target.value))}
-                        className="w-full px-2.5 py-1.5 rounded-md border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 font-mono text-xs text-rose-600 dark:text-rose-400 focus:outline-none"
+                        className="w-full px-2.5 py-1.5 rounded-lg border border-zinc-700 bg-[#1b1822] font-mono text-xs text-rose-400 focus:outline-none"
                       />
                     </div>
                   </div>
 
-                  <div className="flex items-center justify-between text-[11px] pt-1 text-slate-500">
-                    <span>Total Fee: <b>₹{(Number(formBasePay || 0) + Number(formBonus || 0)).toLocaleString('en-IN')}</b></span>
-                    <span>Net Profit: <b className="text-emerald-600 dark:text-emerald-400">₹{(Number(formBasePay || 0) + Number(formBonus || 0) - Number(formSpending || 0)).toLocaleString('en-IN')}</b></span>
+                  <div className="flex items-center justify-between text-[11px] pt-1.5 text-zinc-400 border-t border-zinc-800/80">
+                    <span>Total Fee: <b className="text-amber-300">₹{(Number(formBasePay || 0) + Number(formBonus || 0)).toLocaleString('en-IN')}</b></span>
+                    <span>Net Profit: <b className="bg-gradient-to-r from-amber-300 to-rose-300 bg-clip-text text-transparent font-bold">₹{(Number(formBasePay || 0) + Number(formBonus || 0) - Number(formSpending || 0)).toLocaleString('en-IN')}</b></span>
                   </div>
                 </div>
 
                 {/* Status, Payment Date, Payment Mode */}
                 <div className="grid grid-cols-3 gap-3">
                   <div>
-                    <label className="block text-slate-600 dark:text-slate-400 mb-1 font-medium">
+                    <label className="block text-zinc-300 mb-1 font-medium">
                       Payment Status
                     </label>
                     <select
                       value={formStatus}
                       onChange={(e) => setFormStatus(e.target.value as any)}
-                      className="w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-slate-900 dark:text-slate-100 focus:outline-none"
+                      className={`w-full px-2.5 py-2 rounded-xl border font-bold text-xs focus:outline-none transition-colors ${
+                        formStatus === 'Paid'
+                          ? 'bg-emerald-500/15 border-emerald-500/35 text-emerald-300'
+                          : 'bg-amber-500/15 border-amber-500/35 text-amber-300'
+                      }`}
                     >
-                      <option value="Paid">Paid</option>
-                      <option value="Pending">Pending</option>
-                      <option value="Invoiced">Invoiced</option>
-                      <option value="Cancelled">Cancelled</option>
+                      <option value="Pending" className="bg-[#17151e] text-amber-300">⏳ Pending (No)</option>
+                      <option value="Paid" className="bg-[#17151e] text-emerald-300">✅ Paid</option>
                     </select>
                   </div>
 
                   <div>
-                    <label className="block text-slate-600 dark:text-slate-400 mb-1 font-medium">
-                      Payment Date
-                    </label>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="block text-zinc-300 font-medium">
+                        Payment Date
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const base = formDate ? new Date(formDate) : new Date();
+                          if (!isNaN(base.getTime())) {
+                            base.setDate(base.getDate() + 15);
+                            setFormPaymentDate(base.toISOString().slice(0, 10));
+                          }
+                        }}
+                        className="text-[9px] px-1.5 py-0.5 rounded font-mono bg-zinc-800 text-amber-300 border border-amber-500/25 hover:bg-zinc-700 transition-colors cursor-pointer"
+                        title="Set to 15 days after post date"
+                      >
+                        +15d
+                      </button>
+                    </div>
                     <input
                       type="date"
                       value={formPaymentDate}
                       onChange={(e) => setFormPaymentDate(e.target.value)}
-                      className="w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-slate-900 dark:text-slate-100 focus:outline-none"
+                      className="w-full px-2.5 py-2 rounded-xl border border-zinc-700/80 bg-[#17151e] text-zinc-100 focus:outline-none"
                     />
                   </div>
 
                   <div>
-                    <label className="block text-slate-600 dark:text-slate-400 mb-1 font-medium">
+                    <label className="block text-zinc-300 mb-1 font-medium">
                       Payment Mode
                     </label>
                     <select
                       value={formPaymentMode}
                       onChange={(e) => setFormPaymentMode(e.target.value as any)}
-                      className="w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-slate-900 dark:text-slate-100 focus:outline-none"
+                      className="w-full px-2.5 py-2 rounded-xl border border-zinc-700/80 bg-[#17151e] text-zinc-100 focus:outline-none"
                     >
                       {PAYMENT_MODES.map((m) => (
-                        <option key={m} value={m}>{m}</option>
+                        <option key={m} value={m} className="bg-[#17151e]">{m}</option>
                       ))}
                     </select>
                   </div>
@@ -1575,7 +1961,7 @@ export function CollabManagerModal({ isOpen, onClose }: CollabManagerModalProps)
 
                 {/* Content Link */}
                 <div>
-                  <label className="block text-slate-600 dark:text-slate-400 mb-1 font-medium">
+                  <label className="block text-zinc-300 mb-1 font-medium">
                     LinkedIn Post URL (Optional)
                   </label>
                   <input
@@ -1583,13 +1969,13 @@ export function CollabManagerModal({ isOpen, onClose }: CollabManagerModalProps)
                     value={formPostUrl}
                     onChange={(e) => setFormPostUrl(e.target.value)}
                     placeholder="https://linkedin.com/posts/..."
-                    className="w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-slate-900 dark:text-slate-100 focus:outline-none"
+                    className="w-full px-3 py-2 rounded-xl border border-zinc-700/80 bg-[#17151e] text-zinc-100 focus:outline-none"
                   />
                 </div>
 
                 {/* Notes */}
                 <div>
-                  <label className="block text-slate-600 dark:text-slate-400 mb-1 font-medium">
+                  <label className="block text-zinc-300 mb-1 font-medium">
                     Notes &amp; Requirements
                   </label>
                   <textarea
@@ -1597,7 +1983,7 @@ export function CollabManagerModal({ isOpen, onClose }: CollabManagerModalProps)
                     value={formNotes}
                     onChange={(e) => setFormNotes(e.target.value)}
                     placeholder="Deliverable details, instructions..."
-                    className="w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-slate-900 dark:text-slate-100 focus:outline-none resize-none"
+                    className="w-full px-3 py-2 rounded-xl border border-zinc-700/80 bg-[#17151e] text-zinc-100 focus:outline-none resize-none"
                   />
                 </div>
 
@@ -1605,13 +1991,13 @@ export function CollabManagerModal({ isOpen, onClose }: CollabManagerModalProps)
                   <button
                     type="button"
                     onClick={() => setIsFormOpen(false)}
-                    className="px-4 py-2 rounded-lg border border-slate-200 dark:border-zinc-700 text-slate-600 dark:text-slate-400 hover:bg-slate-50 transition-colors"
+                    className="px-4 py-2 rounded-xl border border-zinc-700 text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200 transition-colors"
                   >
                     Cancel
                   </button>
                   <button
                     type="submit"
-                    className="px-5 py-2 rounded-lg bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-semibold text-xs transition-colors cursor-pointer shadow-sm"
+                    className="px-5 py-2 rounded-xl bg-gradient-to-r from-amber-500 via-rose-500 to-pink-600 hover:from-amber-400 hover:via-rose-400 hover:to-pink-500 text-slate-950 font-bold text-xs transition-all cursor-pointer shadow-md shadow-rose-950/50"
                   >
                     {editingItem ? 'Save Changes' : 'Save Brand Deal'}
                   </button>

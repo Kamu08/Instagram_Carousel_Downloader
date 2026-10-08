@@ -28,6 +28,7 @@ import {
   Users,
   Heart,
   Crown,
+  Zap,
 } from 'lucide-react';
 import {
   CollabItem,
@@ -413,6 +414,7 @@ export function CollabManagerModal({ isOpen, onClose }: CollabManagerModalProps)
   const [statusFilter, setStatusFilter] = useState<'all' | PaymentStatus>('all');
   const [likeFilter, setLikeFilter] = useState<'all' | 'Prince' | 'Shivani' | 'Others' | 'None'>('all');
   const [expandedRowId, setExpandedRowId] = useState<string | null>(null);
+  const [selectedCollabIds, setSelectedCollabIds] = useState<string[]>([]);
 
   // Add / Edit Form State
   const [isFormOpen, setIsFormOpen] = useState(false);
@@ -431,6 +433,7 @@ export function CollabManagerModal({ isOpen, onClose }: CollabManagerModalProps)
   const [formLikeHandlerType, setFormLikeHandlerType] = useState<'None' | 'Prince' | 'Shivani' | 'Other'>('None');
   const [formCustomHandlerName, setFormCustomHandlerName] = useState('');
   const [formLikeCost, setFormLikeCost] = useState<number>(0);
+  const [formLikePaymentStatus, setFormLikePaymentStatus] = useState<'Paid' | 'Pending'>('Pending');
   const [formInvoiceSent, setFormInvoiceSent] = useState<InvoiceStatus>('No');
   const [formStatus, setFormStatus] = useState<PaymentStatus>('Pending');
   const [formPaymentDate, setFormPaymentDate] = useState(() => {
@@ -515,6 +518,26 @@ export function CollabManagerModal({ isOpen, onClose }: CollabManagerModalProps)
     });
   }, [collabs, selectedMonth, searchQuery, statusFilter, likeFilter]);
 
+  const isAllFilteredSelected =
+    filteredCollabs.length > 0 &&
+    filteredCollabs.every((item) => selectedCollabIds.includes(item.id));
+
+  const handleToggleSelectAll = () => {
+    if (isAllFilteredSelected) {
+      const filteredSet = new Set(filteredCollabs.map((c) => c.id));
+      setSelectedCollabIds(selectedCollabIds.filter((id) => !filteredSet.has(id)));
+    } else {
+      const newSelected = new Set([...selectedCollabIds, ...filteredCollabs.map((c) => c.id)]);
+      setSelectedCollabIds(Array.from(newSelected));
+    }
+  };
+
+  const handleToggleSelectRow = (id: string) => {
+    setSelectedCollabIds((prev) =>
+      prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]
+    );
+  };
+
   if (!isOpen) return null;
 
   // Handlers
@@ -533,6 +556,7 @@ export function CollabManagerModal({ isOpen, onClose }: CollabManagerModalProps)
     setFormLikeHandlerType('None');
     setFormCustomHandlerName('');
     setFormLikeCost(0);
+    setFormLikePaymentStatus('Pending');
     setFormInvoiceSent('No');
     setFormStatus('Pending');
     
@@ -574,6 +598,7 @@ export function CollabManagerModal({ isOpen, onClose }: CollabManagerModalProps)
       setFormCustomHandlerName('');
     }
     setFormLikeCost(item.likeCost !== undefined ? item.likeCost : (item.spending || 0));
+    setFormLikePaymentStatus(item.likePaymentStatus || 'Pending');
 
     setFormInvoiceSent(item.invoiceSent || 'Yes');
     setFormStatus(item.status || 'Paid');
@@ -600,6 +625,7 @@ export function CollabManagerModal({ isOpen, onClose }: CollabManagerModalProps)
     else if (formLikeHandlerType === 'Other') finalHandler = formCustomHandlerName.trim() || 'New Guy';
 
     const finalLikeCost = formLikeHandlerType !== 'None' ? Number(formLikeCost || spend) : 0;
+    const finalLikePaymentStatus = formLikeHandlerType !== 'None' ? formLikePaymentStatus : undefined;
 
     if (editingItem) {
       const updated = collabs.map((c) =>
@@ -620,6 +646,7 @@ export function CollabManagerModal({ isOpen, onClose }: CollabManagerModalProps)
               netProfit: net,
               likeHandler: finalHandler,
               likeCost: finalLikeCost,
+              likePaymentStatus: finalLikePaymentStatus,
               invoiceSent: formInvoiceSent,
               status: formStatus,
               paymentReceivedDate: formPaymentDate || undefined,
@@ -650,6 +677,7 @@ export function CollabManagerModal({ isOpen, onClose }: CollabManagerModalProps)
         netProfit: net,
         likeHandler: finalHandler,
         likeCost: finalLikeCost,
+        likePaymentStatus: finalLikePaymentStatus,
         invoiceSent: formInvoiceSent,
         status: formStatus,
         paymentReceivedDate: formPaymentDate || undefined,
@@ -691,6 +719,168 @@ export function CollabManagerModal({ isOpen, onClose }: CollabManagerModalProps)
     );
     setCollabs(updated);
     saveCollabs(updated);
+  };
+
+  const handleToggleLikePaymentStatus = (item: CollabItem) => {
+    const nextStatus: 'Paid' | 'Pending' = item.likePaymentStatus === 'Paid' ? 'Pending' : 'Paid';
+    const updated = collabs.map((c) =>
+      c.id === item.id
+        ? {
+            ...c,
+            likePaymentStatus: nextStatus,
+            updatedAt: new Date().toISOString(),
+          }
+        : c
+    );
+    setCollabs(updated);
+    saveCollabs(updated);
+  };
+
+  // Settle specific or all handler payouts
+  const handleSettleHandlerPayouts = (handlerTarget: 'Prince' | 'Shivani' | 'Others' | 'All', targetMonth = 'all') => {
+    let count = 0;
+    const updated = collabs.map((c) => {
+      const matchMonth = targetMonth === 'all' || c.month === targetMonth;
+      if (!matchMonth || !c.likeHandler || c.likeHandler.toLowerCase() === 'none') {
+        return c;
+      }
+      const isPrince = c.likeHandler.toLowerCase().includes('prince');
+      const isShivani = c.likeHandler.toLowerCase().includes('shivani');
+      const isOther = !isPrince && !isShivani;
+
+      const matchesHandler =
+        handlerTarget === 'All' ||
+        (handlerTarget === 'Prince' && isPrince) ||
+        (handlerTarget === 'Shivani' && isShivani) ||
+        (handlerTarget === 'Others' && isOther);
+
+      if (matchesHandler && c.likePaymentStatus !== 'Paid') {
+        count++;
+        return {
+          ...c,
+          likePaymentStatus: 'Paid' as const,
+          updatedAt: new Date().toISOString(),
+        };
+      }
+      return c;
+    });
+
+    setCollabs(updated);
+    saveCollabs(updated);
+    const targetLabel = handlerTarget === 'All' ? 'All Handlers' : handlerTarget;
+    setSyncStatusMsg({
+      text: `⚡ 1-Click Settled: ${count} like payouts for ${targetLabel} marked Paid (Due is now ₹0)!`,
+      isError: false,
+    });
+  };
+
+  // 1-Click Master Settle: Marks ALL Collabs & Handlers as Paid
+  const handleSettleEverything = (targetMonth: string = selectedMonth) => {
+    let settledCount = 0;
+    const todayStr = new Date().toISOString().slice(0, 10);
+    const updated = collabs.map((c) => {
+      const matchMonth = targetMonth === 'all' || c.month === targetMonth;
+      if (!matchMonth) return c;
+
+      const needsDealSettle = c.status !== 'Paid';
+      const hasHandler = c.likeHandler && c.likeHandler.toLowerCase() !== 'none';
+      const needsLikeSettle = hasHandler && c.likePaymentStatus !== 'Paid';
+
+      if (needsDealSettle || needsLikeSettle) {
+        settledCount++;
+        return {
+          ...c,
+          status: 'Paid' as PaymentStatus,
+          paymentReceivedDate: c.paymentReceivedDate || todayStr,
+          likePaymentStatus: hasHandler ? ('Paid' as const) : c.likePaymentStatus,
+          updatedAt: new Date().toISOString(),
+        };
+      }
+      return c;
+    });
+
+    setCollabs(updated);
+    saveCollabs(updated);
+    setSelectedCollabIds([]);
+    setSyncStatusMsg({
+      text: `⚡ 1-Click Complete: All brand deals & handler payouts settled to ₹0 (${settledCount} records updated)!`,
+      isError: false,
+    });
+  };
+
+  // 1-Click Settle All Brand Deals (Paid)
+  const handleSettleAllBrandDeals = (targetMonth: string = selectedMonth) => {
+    let count = 0;
+    const todayStr = new Date().toISOString().slice(0, 10);
+    const updated = collabs.map((c) => {
+      const matchMonth = targetMonth === 'all' || c.month === targetMonth;
+      if (!matchMonth || c.status === 'Paid') return c;
+      count++;
+      return {
+        ...c,
+        status: 'Paid' as PaymentStatus,
+        paymentReceivedDate: c.paymentReceivedDate || todayStr,
+        updatedAt: new Date().toISOString(),
+      };
+    });
+
+    setCollabs(updated);
+    saveCollabs(updated);
+    setSelectedCollabIds([]);
+    setSyncStatusMsg({
+      text: `✓ 1-Click Complete: Marked ${count} brand deals as Paid (Collected)!`,
+      isError: false,
+    });
+  };
+
+  // 1-Click Settle Selected Collabs (Batch)
+  const handleSettleSelectedCollabs = (type: 'all' | 'likes' | 'deals' = 'all') => {
+    if (selectedCollabIds.length === 0) return;
+    const todayStr = new Date().toISOString().slice(0, 10);
+    const selectedSet = new Set(selectedCollabIds);
+    let count = 0;
+
+    const updated = collabs.map((c) => {
+      if (!selectedSet.has(c.id)) return c;
+      count++;
+      const nextStatus = (type === 'all' || type === 'deals') ? ('Paid' as PaymentStatus) : c.status;
+      const nextLikeStatus =
+        (type === 'all' || type === 'likes') && c.likeHandler && c.likeHandler.toLowerCase() !== 'none'
+          ? ('Paid' as const)
+          : c.likePaymentStatus;
+
+      return {
+        ...c,
+        status: nextStatus,
+        paymentReceivedDate: nextStatus === 'Paid' ? (c.paymentReceivedDate || todayStr) : c.paymentReceivedDate,
+        likePaymentStatus: nextLikeStatus,
+        updatedAt: new Date().toISOString(),
+      };
+    });
+
+    setCollabs(updated);
+    saveCollabs(updated);
+    setSelectedCollabIds([]);
+    setSyncStatusMsg({
+      text: `⚡ Successfully settled ${count} selected collaborations to ₹0!`,
+      isError: false,
+    });
+  };
+
+  // Delete Selected Collabs (Batch)
+  const handleDeleteSelected = () => {
+    if (selectedCollabIds.length === 0) return;
+    if (confirm(`Delete ${selectedCollabIds.length} selected collaboration records?`)) {
+      const selectedSet = new Set(selectedCollabIds);
+      const updated = collabs.filter((c) => !selectedSet.has(c.id));
+      setCollabs(updated);
+      saveCollabs(updated);
+      setSelectedCollabIds([]);
+      setSyncStatusMsg({
+        text: `Deleted ${selectedCollabIds.length} records.`,
+        isError: false,
+      });
+    }
   };
 
   const handleSyncToGoogleSheet = async () => {
@@ -754,24 +944,24 @@ export function CollabManagerModal({ isOpen, onClose }: CollabManagerModalProps)
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-md p-3 sm:p-5 overflow-y-auto animate-fadeIn">
-      <div className="bg-[#0c0c0e] text-zinc-100 w-full max-w-6xl max-h-[92vh] rounded-2xl border border-amber-500/25 dark:border-rose-500/20 shadow-2xl shadow-rose-950/50 flex flex-col overflow-hidden my-auto transition-colors">
+      <div className="bg-[#0f1117] text-slate-100 w-full max-w-6xl max-h-[92vh] rounded-2xl border border-slate-800 shadow-2xl shadow-slate-950/80 flex flex-col overflow-hidden my-auto transition-colors">
         
-        {/* Sleek Executive Header (Obsidian & Sunset Rose/Gold) */}
-        <div className="px-5 py-4 border-b border-rose-500/20 bg-gradient-to-r from-[#0c0c0e] via-[#161218] to-[#0c0c0e] text-white flex items-center justify-between shrink-0">
+        {/* Modern Minimal Slate & Deep Cyan Header */}
+        <div className="px-5 py-4 border-b border-slate-800 bg-[#121520] text-slate-100 flex items-center justify-between shrink-0">
           <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-amber-500/25 via-rose-500/20 to-pink-500/20 text-amber-400 border border-amber-500/40 flex items-center justify-center shadow-sm shadow-amber-500/10">
+            <div className="w-9 h-9 rounded-xl bg-cyan-500/10 text-cyan-400 border border-cyan-500/30 flex items-center justify-center shadow-sm">
               <DollarSign className="w-5 h-5 stroke-[2.5]" />
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h2 className="font-bold text-base tracking-tight bg-gradient-to-r from-amber-200 via-rose-200 to-pink-200 bg-clip-text text-transparent">
+                <h2 className="font-bold text-base tracking-tight text-slate-100">
                   Kamal - LinkedIn Collabs 2026
                 </h2>
-                <span className="px-2 py-0.5 rounded-md bg-rose-500/15 text-rose-300 text-[11px] font-medium border border-rose-500/30">
+                <span className="px-2 py-0.5 rounded-md bg-cyan-500/15 text-cyan-300 text-[11px] font-medium border border-cyan-500/30">
                   Live Sheet Sync
                 </span>
               </div>
-              <p className="text-xs text-zinc-400 font-normal">
+              <p className="text-xs text-slate-400 font-normal">
                 Monthly revenue tracking, brand CRM &amp; analytics
               </p>
             </div>
@@ -782,10 +972,10 @@ export function CollabManagerModal({ isOpen, onClose }: CollabManagerModalProps)
               href="https://docs.google.com/spreadsheets/d/1OCUbKY7KmoIlpJ6Os4sNZPhKZCl-ZfLJF4rfrtO96IQ/edit"
               target="_blank"
               rel="noopener noreferrer"
-              className="px-3.5 py-1.5 rounded-lg bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 border border-amber-500/30 text-xs font-medium flex items-center gap-1.5 transition-colors cursor-pointer shadow-xs"
+              className="px-3.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-medium flex items-center gap-1.5 transition-colors cursor-pointer shadow-xs"
               title="Open Google Sheet in new tab"
             >
-              <ExternalLink className="w-3.5 h-3.5 text-amber-400" />
+              <ExternalLink className="w-3.5 h-3.5 text-slate-400" />
               <span className="hidden sm:inline">Open Sheet</span>
             </a>
 
@@ -793,12 +983,12 @@ export function CollabManagerModal({ isOpen, onClose }: CollabManagerModalProps)
               type="button"
               onClick={handleSyncToGoogleSheet}
               disabled={isSyncing}
-              className="px-3.5 py-1.5 rounded-lg bg-zinc-900 hover:bg-zinc-800 text-zinc-200 border border-zinc-700/80 text-xs font-medium flex items-center gap-1.5 transition-colors cursor-pointer disabled:opacity-50"
+              className="px-3.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-medium flex items-center gap-1.5 transition-colors cursor-pointer disabled:opacity-50"
             >
               {isSyncing ? (
-                <Loader2 className="w-3.5 h-3.5 animate-spin text-rose-400" />
+                <Loader2 className="w-3.5 h-3.5 animate-spin text-cyan-400" />
               ) : (
-                <FileSpreadsheet className="w-3.5 h-3.5 text-rose-400" />
+                <FileSpreadsheet className="w-3.5 h-3.5 text-cyan-400" />
               )}
               <span className="hidden sm:inline">Sync Sheet</span>
             </button>
@@ -806,7 +996,7 @@ export function CollabManagerModal({ isOpen, onClose }: CollabManagerModalProps)
             <button
               type="button"
               onClick={handleOpenAdd}
-              className="px-3.5 py-1.5 rounded-lg bg-gradient-to-r from-amber-500 via-rose-500 to-pink-600 hover:from-amber-400 hover:via-rose-400 hover:to-pink-500 text-slate-950 font-bold text-xs flex items-center gap-1.5 transition-all cursor-pointer shadow-md shadow-rose-950/40"
+              className="px-3.5 py-1.5 rounded-lg bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold text-xs flex items-center gap-1.5 transition-all cursor-pointer shadow-sm shadow-cyan-950/40"
             >
               <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
               <span>Add Deal</span>
@@ -815,7 +1005,7 @@ export function CollabManagerModal({ isOpen, onClose }: CollabManagerModalProps)
             <button
               type="button"
               onClick={onClose}
-              className="w-8 h-8 rounded-lg text-zinc-400 hover:text-white hover:bg-zinc-800 flex items-center justify-center transition-colors cursor-pointer ml-1"
+              className="w-8 h-8 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 flex items-center justify-center transition-colors cursor-pointer ml-1"
             >
               <X className="w-4 h-4" />
             </button>
@@ -828,11 +1018,11 @@ export function CollabManagerModal({ isOpen, onClose }: CollabManagerModalProps)
             className={`px-5 py-2 text-xs font-medium flex items-center justify-between border-b ${
               syncStatusMsg.isError
                 ? 'bg-rose-950/40 text-rose-300 border-rose-900/50'
-                : 'bg-amber-950/40 text-amber-300 border-amber-900/50'
+                : 'bg-cyan-950/40 text-cyan-300 border-cyan-900/50'
             }`}
           >
             <div className="flex items-center gap-2">
-              <ShieldCheck className="w-4 h-4 shrink-0 text-amber-400" />
+              <ShieldCheck className="w-4 h-4 shrink-0 text-cyan-400" />
               <span>{syncStatusMsg.text}</span>
             </div>
             <button
@@ -846,7 +1036,7 @@ export function CollabManagerModal({ isOpen, onClose }: CollabManagerModalProps)
         )}
 
         {/* Navigation & Controls Bar */}
-        <div className="px-5 py-3 border-b border-zinc-800/80 bg-[#100e14] flex flex-wrap items-center justify-between gap-3 shrink-0">
+        <div className="px-5 py-3 border-b border-slate-800/80 bg-[#121520] flex flex-wrap items-center justify-between gap-3 shrink-0">
           
           {/* Main Views (Monthly Analytics vs Month CRMs) */}
           <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar max-w-full">
@@ -856,15 +1046,15 @@ export function CollabManagerModal({ isOpen, onClose }: CollabManagerModalProps)
               onClick={() => setActiveView('analytics')}
               className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer shrink-0 ${
                 activeView === 'analytics'
-                  ? 'bg-gradient-to-r from-amber-500 to-rose-500 text-slate-950 shadow-md shadow-amber-950/40'
-                  : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/60'
+                  ? 'bg-cyan-500 text-slate-950 font-bold shadow-sm shadow-cyan-950/30'
+                  : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
               }`}
             >
               <BarChart3 className="w-3.5 h-3.5 text-current" />
               <span>Monthly Analytics</span>
             </button>
 
-            <div className="w-[1px] h-4 bg-zinc-800 mx-1 shrink-0" />
+            <div className="w-[1px] h-4 bg-slate-800 mx-1 shrink-0" />
 
             {/* Individual Month CRM Tabs */}
             {months.map((m) => {
@@ -880,8 +1070,8 @@ export function CollabManagerModal({ isOpen, onClose }: CollabManagerModalProps)
                   }}
                   className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer shrink-0 ${
                     isSelected
-                      ? 'bg-gradient-to-r from-amber-500 to-rose-500 text-slate-950 shadow-md shadow-amber-950/40'
-                      : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/60'
+                      ? 'bg-cyan-500 text-slate-950 font-bold shadow-sm shadow-cyan-950/30'
+                      : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
                   }`}
                 >
                   {label}
@@ -897,8 +1087,8 @@ export function CollabManagerModal({ isOpen, onClose }: CollabManagerModalProps)
               }}
               className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer shrink-0 ${
                 activeView === 'month' && selectedMonth === 'all'
-                  ? 'bg-gradient-to-r from-amber-500 to-rose-500 text-slate-950 shadow-md shadow-amber-950/40'
-                  : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/60'
+                  ? 'bg-cyan-500 text-slate-950 font-bold shadow-sm shadow-cyan-950/30'
+                  : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
               }`}
             >
               All Time
@@ -909,9 +1099,9 @@ export function CollabManagerModal({ isOpen, onClose }: CollabManagerModalProps)
           <button
             type="button"
             onClick={() => setIsSyncSettingsOpen(!isSyncSettingsOpen)}
-            className="text-xs font-medium text-zinc-400 hover:text-amber-300 flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-zinc-800 hover:border-amber-500/30 hover:bg-zinc-900 transition-colors cursor-pointer"
+            className="text-xs font-medium text-slate-400 hover:text-cyan-300 flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-slate-800 hover:border-slate-700 hover:bg-slate-800/60 transition-colors cursor-pointer"
           >
-            <FileSpreadsheet className="w-3.5 h-3.5 text-rose-400" />
+            <FileSpreadsheet className="w-3.5 h-3.5 text-cyan-400" />
             <span>Webhook Setup</span>
             {isSyncSettingsOpen ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
           </button>
@@ -919,17 +1109,17 @@ export function CollabManagerModal({ isOpen, onClose }: CollabManagerModalProps)
 
         {/* Google Sheet Webhook Settings Drawer */}
         {isSyncSettingsOpen && (
-          <div className="p-4 bg-[#141219] border-b border-zinc-800 space-y-2.5 text-xs animate-fadeIn shrink-0">
+          <div className="p-4 bg-[#141824] border-b border-slate-800 space-y-2.5 text-xs animate-fadeIn shrink-0">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-              <span className="font-semibold text-zinc-200">
+              <span className="font-semibold text-slate-200">
                 Google Apps Script Deployment URL
               </span>
               <button
                 type="button"
                 onClick={handleCopyGoogleScript}
-                className="px-3 py-1.5 rounded-lg bg-zinc-800 border border-zinc-700 font-medium text-xs text-zinc-300 flex items-center gap-1.5 hover:bg-zinc-700 transition-colors cursor-pointer"
+                className="px-3 py-1.5 rounded-lg bg-slate-800 border border-slate-700 font-medium text-xs text-slate-300 flex items-center gap-1.5 hover:bg-slate-700 transition-colors cursor-pointer"
               >
-                <Copy className="w-3.5 h-3.5 text-amber-400" />
+                <Copy className="w-3.5 h-3.5 text-cyan-400" />
                 <span>{copiedCode ? '✓ Script Copied' : 'Copy Multi-Sheet Script'}</span>
               </button>
             </div>
@@ -944,63 +1134,63 @@ export function CollabManagerModal({ isOpen, onClose }: CollabManagerModalProps)
                   saveSyncConfig(next);
                 }}
                 placeholder="https://script.google.com/macros/s/.../exec"
-                className="flex-1 px-3 py-2 rounded-lg border border-zinc-700 bg-zinc-900 font-mono text-xs text-zinc-100 focus:outline-none focus:ring-1 focus:ring-amber-500"
+                className="flex-1 px-3 py-2 rounded-lg border border-slate-700 bg-slate-900 font-mono text-xs text-slate-100 focus:outline-none focus:ring-1 focus:ring-cyan-500"
               />
               <button
                 type="button"
                 onClick={handleSyncToGoogleSheet}
                 disabled={isSyncing || !syncConfig.webhookUrl}
-                className="px-4 py-2 rounded-lg bg-gradient-to-r from-amber-500 to-rose-500 hover:from-amber-400 hover:to-rose-400 text-slate-950 font-bold text-xs shrink-0 transition-all cursor-pointer disabled:opacity-50"
+                className="px-4 py-2 rounded-lg bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold text-xs shrink-0 transition-all cursor-pointer disabled:opacity-50"
               >
                 Test &amp; Sync
               </button>
             </div>
 
-            <p className="text-[11px] text-zinc-400">
+            <p className="text-[11px] text-slate-400">
               Paste the script in your Google Sheet under <b>Extensions &gt; Apps Script</b> &rarr; <b>Deploy &gt; Web app (Anyone)</b>. It will auto-create and update your <code>Monthly Analytics</code> and monthly sheets.
             </p>
           </div>
         )}
 
         {/* Body Content */}
-        <div className="flex-1 overflow-y-auto no-scrollbar p-5 space-y-5 bg-[#0c0c0e]">
+        <div className="flex-1 overflow-y-auto no-scrollbar p-5 space-y-5 bg-[#0f1117]">
           
           {/* VIEW 1: MONTHLY ANALYTICS */}
           {activeView === 'analytics' ? (
             <div className="space-y-5 animate-fadeIn">
-              {/* Financial KPI Cards (5 Sections - Sunset Gold/Rose Luxury Glow) */}
+              {/* Financial KPI Cards (5 Sections - Clean Slate & Steel Cyan) */}
               <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3.5">
                 {/* 1. Total Revenue */}
-                <div className="p-4 rounded-2xl bg-gradient-to-br from-amber-500/10 via-zinc-900/70 to-zinc-950 border border-amber-500/25 shadow-sm">
-                  <span className="text-xs font-semibold text-amber-200/75">Total Revenue</span>
-                  <p className="font-bold text-2xl text-amber-300 mt-1">
+                <div className="p-4 rounded-2xl bg-[#141824] border border-slate-800 shadow-sm">
+                  <span className="text-xs font-semibold text-slate-400">Total Revenue</span>
+                  <p className="font-bold text-2xl text-cyan-400 mt-1 font-mono">
                     ₹{overallTotals.totalRevenue.toLocaleString('en-IN')}
                   </p>
-                  <span className="text-[11px] text-amber-400/70">{overallTotals.totalCollabs} Deals Across All Months</span>
+                  <span className="text-[11px] text-slate-500">{overallTotals.totalCollabs} Deals Across All Months</span>
                 </div>
 
                 {/* 2. Total Spend */}
-                <div className="p-4 rounded-2xl bg-gradient-to-br from-rose-500/10 via-zinc-900/70 to-zinc-950 border border-rose-500/25 shadow-sm">
-                  <span className="text-xs font-semibold text-rose-200/75">Total Spend</span>
-                  <p className="font-bold text-2xl text-rose-400 mt-1">
+                <div className="p-4 rounded-2xl bg-[#141824] border border-slate-800 shadow-sm">
+                  <span className="text-xs font-semibold text-slate-400">Total Spend</span>
+                  <p className="font-bold text-2xl text-slate-300 mt-1 font-mono">
                     ₹{overallTotals.totalSpend.toLocaleString('en-IN')}
                   </p>
-                  <span className="text-[11px] text-rose-300/70">Production &amp; Outsource Costs</span>
+                  <span className="text-[11px] text-slate-500">Production &amp; Outsource Costs</span>
                 </div>
 
                 {/* 3. Net Profit (Hero Card) */}
-                <div className="p-4 rounded-2xl bg-gradient-to-br from-amber-500/20 via-rose-500/15 to-zinc-950 border border-amber-500/40 shadow-md shadow-rose-950/30">
-                  <span className="text-xs font-bold bg-gradient-to-r from-amber-300 to-rose-300 bg-clip-text text-transparent">Net Profit (Hero)</span>
-                  <p className="font-extrabold text-2xl bg-gradient-to-r from-amber-200 via-rose-200 to-pink-200 bg-clip-text text-transparent mt-1">
+                <div className="p-4 rounded-2xl bg-gradient-to-br from-cyan-950/30 via-[#161c2c] to-[#121520] border border-cyan-500/35 shadow-sm">
+                  <span className="text-xs font-bold text-cyan-300">Net Profit (Hero)</span>
+                  <p className="font-extrabold text-2xl text-cyan-300 mt-1 font-mono">
                     ₹{overallTotals.totalProfit.toLocaleString('en-IN')}
                   </p>
-                  <span className="text-[11px] text-rose-300 font-semibold">Take-Home Profit</span>
+                  <span className="text-[11px] text-cyan-400/80 font-medium">Take-Home Profit</span>
                 </div>
 
                 {/* 4. Amount Collected */}
-                <div className="p-4 rounded-2xl bg-gradient-to-br from-emerald-500/10 via-zinc-900/70 to-zinc-950 border border-emerald-500/25 shadow-sm">
-                  <span className="text-xs font-semibold text-emerald-200/75">Amount Collected</span>
-                  <p className="font-bold text-2xl text-emerald-400 mt-1">
+                <div className="p-4 rounded-2xl bg-[#141824] border border-slate-800 shadow-sm">
+                  <span className="text-xs font-semibold text-slate-400">Amount Collected</span>
+                  <p className="font-bold text-2xl text-emerald-400 mt-1 font-mono">
                     ₹{overallTotals.amountCollected.toLocaleString('en-IN')}
                   </p>
                   <span className="text-[11px] text-emerald-400/80 font-medium">
@@ -1009,99 +1199,227 @@ export function CollabManagerModal({ isOpen, onClose }: CollabManagerModalProps)
                 </div>
 
                 {/* 5. Amount Need to be Collected */}
-                <div className="p-4 rounded-2xl bg-gradient-to-br from-orange-500/10 via-zinc-900/70 to-zinc-950 border border-orange-500/25 shadow-sm col-span-2 sm:col-span-1">
-                  <span className="text-xs font-semibold text-orange-200/75">Amount to Collect</span>
-                  <p className="font-bold text-2xl text-orange-400 mt-1">
+                <div className="p-4 rounded-2xl bg-[#141824] border border-slate-800 shadow-sm col-span-2 sm:col-span-1">
+                  <span className="text-xs font-semibold text-slate-400">Amount to Collect</span>
+                  <p className="font-bold text-2xl text-amber-400 mt-1 font-mono">
                     ₹{overallTotals.amountPending.toLocaleString('en-IN')}
                   </p>
-                  <span className="text-[11px] text-orange-400/80 font-medium">
+                  <span className="text-[11px] text-amber-400/80 font-medium">
                     {overallTotals.pendingCount} Deals Pending
                   </span>
                 </div>
               </div>
 
               {/* Likes Management & Handlers Summary (Prince / Shivani / Others) */}
-              <div className="p-4 rounded-2xl bg-[#110f16] border border-amber-500/20 space-y-3 shadow-sm">
-                <div className="flex items-center justify-between">
+              <div className="p-4 rounded-2xl bg-[#141824] border border-slate-800 space-y-3.5 shadow-sm">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                   <div className="flex items-center gap-2.5">
-                    <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-amber-500/25 to-rose-500/25 text-amber-300 border border-amber-500/40 flex items-center justify-center text-sm font-bold shadow-xs">
+                    <div className="w-7 h-7 rounded-lg bg-cyan-500/15 text-cyan-400 border border-cyan-500/30 flex items-center justify-center text-sm font-bold shadow-xs">
                       👑
                     </div>
                     <div>
-                      <h4 className="font-bold text-xs bg-gradient-to-r from-amber-200 via-rose-200 to-pink-200 bg-clip-text text-transparent">
+                      <h4 className="font-bold text-xs text-slate-200">
                         Like &amp; Engagement Handlers (All-Time Payouts)
                       </h4>
-                      <p className="text-[11px] text-zinc-400">
-                        {overallLikeStats.totalPostsWithLikes} Posts with Managed Likes • Total Likes Spend: <span className="text-amber-300 font-semibold">₹{overallLikeStats.totalLikesCost.toLocaleString('en-IN')}</span>
+                      <p className="text-[11px] text-slate-400">
+                        {overallLikeStats.totalPostsWithLikes} Posts with Managed Likes • Total Likes Cost:{' '}
+                        <span className="text-slate-200 font-semibold font-mono">₹{overallLikeStats.totalLikesCost.toLocaleString('en-IN')}</span>
+                        {' '}• Total Pending Due:{' '}
+                        {overallLikeStats.totalLikesPending > 0 ? (
+                          <span className="text-amber-400 font-bold font-mono">₹{overallLikeStats.totalLikesPending.toLocaleString('en-IN')}</span>
+                        ) : (
+                          <span className="text-emerald-400 font-semibold">₹0 (All Paid)</span>
+                        )}
                       </p>
                     </div>
+                  </div>
+
+                  <div className="flex items-center gap-2 flex-wrap">
+                    {(overallTotals.amountPending > 0 || overallLikeStats.totalLikesPending > 0) && (
+                      <button
+                        type="button"
+                        onClick={() => handleSettleEverything('all')}
+                        className="px-3 py-1.5 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold text-xs flex items-center gap-1.5 shadow-xs transition-all cursor-pointer self-start sm:self-auto"
+                        title="1-Click: Settle all deals and like handler fees across all months"
+                      >
+                        <Zap className="w-3.5 h-3.5 fill-current" />
+                        <span>⚡ 1-Click Settle All Months</span>
+                      </button>
+                    )}
+
+                    {overallLikeStats.totalLikesPending > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => handleSettleHandlerPayouts('All', 'all')}
+                        className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-cyan-300 border border-cyan-500/30 font-semibold text-xs flex items-center gap-1.5 shadow-xs transition-all cursor-pointer self-start sm:self-auto"
+                      >
+                        <Check className="w-3.5 h-3.5" />
+                        <span>Settle Likes (₹{overallLikeStats.totalLikesPending.toLocaleString('en-IN')})</span>
+                      </button>
+                    )}
                   </div>
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                   {/* Prince Card */}
-                  <div className="p-3.5 rounded-xl bg-gradient-to-r from-amber-500/15 via-amber-600/10 to-transparent border border-amber-500/35 flex items-center justify-between shadow-xs">
-                    <div className="flex items-center gap-2.5">
-                      <span className="text-xl">👑</span>
-                      <div>
-                        <span className="font-bold text-xs text-amber-300">Prince</span>
-                        <span className="block text-[11px] text-amber-200/70">{overallLikeStats.prince.postsCount} Posts Managed</span>
+                  <div className="p-3.5 rounded-xl bg-[#181d2c] border border-cyan-500/30 flex flex-col justify-between gap-2.5 shadow-xs">
+                    <div className="flex items-start justify-between">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xl">👑</span>
+                        <div>
+                          <span className="font-bold text-xs text-cyan-300 block">Prince</span>
+                          <span className="text-[11px] text-slate-400">
+                            {overallLikeStats.prince.postsCount} Posts ({overallLikeStats.prince.paidPostsCount} Paid, {overallLikeStats.prince.pendingPostsCount} Due)
+                          </span>
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        {overallLikeStats.prince.pendingCost > 0 ? (
+                          <div>
+                            <span className="font-extrabold text-base text-cyan-300 font-mono block">
+                              ₹{overallLikeStats.prince.pendingCost.toLocaleString('en-IN')}
+                            </span>
+                            <span className="text-[10px] text-cyan-400/80 font-bold uppercase tracking-wider">Due to Pay</span>
+                          </div>
+                        ) : (
+                          <div>
+                            <span className="font-bold text-xs text-emerald-400 flex items-center justify-end gap-1">
+                              <Check className="w-3 h-3 stroke-[2.5]" />
+                              <span>₹0 Due</span>
+                            </span>
+                            <span className="text-[10px] text-emerald-400/70 font-semibold uppercase tracking-wider">Settled</span>
+                          </div>
+                        )}
                       </div>
                     </div>
-                    <div className="text-right">
-                      <span className="font-bold text-sm text-amber-300">
-                        ₹{overallLikeStats.prince.totalCost.toLocaleString('en-IN')}
-                      </span>
-                      <span className="block text-[10px] text-amber-400/60 uppercase tracking-wider font-semibold">Payout</span>
+
+                    <div className="pt-2 border-t border-slate-800 flex items-center justify-between text-[11px]">
+                      <span className="text-slate-400">Total Billed: <b className="text-slate-200 font-mono">₹{overallLikeStats.prince.totalCost.toLocaleString('en-IN')}</b></span>
+                      {overallLikeStats.prince.pendingCost > 0 ? (
+                        <button
+                          type="button"
+                          onClick={() => handleSettleHandlerPayouts('Prince', 'all')}
+                          className="px-2.5 py-1 rounded-lg bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold text-[10px] flex items-center gap-1 transition-all cursor-pointer shadow-xs"
+                        >
+                          <Check className="w-3 h-3 stroke-[2.5]" />
+                          <span>Mark Paid</span>
+                        </button>
+                      ) : (
+                        <span className="text-emerald-400 text-[10px] font-semibold">✓ Paid in Full</span>
+                      )}
                     </div>
                   </div>
 
                   {/* Shivani Card */}
-                  <div className="p-3.5 rounded-xl bg-gradient-to-r from-rose-500/15 via-pink-600/10 to-transparent border border-rose-500/35 flex items-center justify-between shadow-xs">
-                    <div className="flex items-center gap-2.5">
-                      <span className="text-xl">🌸</span>
-                      <div>
-                        <span className="font-bold text-xs text-rose-300">Shivani</span>
-                        <span className="block text-[11px] text-rose-200/70">{overallLikeStats.shivani.postsCount} Posts Managed</span>
+                  <div className="p-3.5 rounded-xl bg-[#181d2c] border border-indigo-500/30 flex flex-col justify-between gap-2.5 shadow-xs">
+                    <div className="flex items-start justify-between">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xl">🌸</span>
+                        <div>
+                          <span className="font-bold text-xs text-indigo-300 block">Shivani</span>
+                          <span className="text-[11px] text-slate-400">
+                            {overallLikeStats.shivani.postsCount} Posts ({overallLikeStats.shivani.paidPostsCount} Paid, {overallLikeStats.shivani.pendingPostsCount} Due)
+                          </span>
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        {overallLikeStats.shivani.pendingCost > 0 ? (
+                          <div>
+                            <span className="font-extrabold text-base text-indigo-300 font-mono block">
+                              ₹{overallLikeStats.shivani.pendingCost.toLocaleString('en-IN')}
+                            </span>
+                            <span className="text-[10px] text-indigo-400/80 font-bold uppercase tracking-wider">Due to Pay</span>
+                          </div>
+                        ) : (
+                          <div>
+                            <span className="font-bold text-xs text-emerald-400 flex items-center justify-end gap-1">
+                              <Check className="w-3 h-3 stroke-[2.5]" />
+                              <span>₹0 Due</span>
+                            </span>
+                            <span className="text-[10px] text-emerald-400/70 font-semibold uppercase tracking-wider">Settled</span>
+                          </div>
+                        )}
                       </div>
                     </div>
-                    <div className="text-right">
-                      <span className="font-bold text-sm text-rose-300">
-                        ₹{overallLikeStats.shivani.totalCost.toLocaleString('en-IN')}
-                      </span>
-                      <span className="block text-[10px] text-rose-400/60 uppercase tracking-wider font-semibold">Payout</span>
+
+                    <div className="pt-2 border-t border-slate-800 flex items-center justify-between text-[11px]">
+                      <span className="text-slate-400">Total Billed: <b className="text-slate-200 font-mono">₹{overallLikeStats.shivani.totalCost.toLocaleString('en-IN')}</b></span>
+                      {overallLikeStats.shivani.pendingCost > 0 ? (
+                        <button
+                          type="button"
+                          onClick={() => handleSettleHandlerPayouts('Shivani', 'all')}
+                          className="px-2.5 py-1 rounded-lg bg-indigo-500 hover:bg-indigo-400 text-white font-bold text-[10px] flex items-center gap-1 transition-all cursor-pointer shadow-xs"
+                        >
+                          <Check className="w-3 h-3 stroke-[2.5]" />
+                          <span>Mark Paid</span>
+                        </button>
+                      ) : (
+                        <span className="text-emerald-400 text-[10px] font-semibold">✓ Paid in Full</span>
+                      )}
                     </div>
                   </div>
 
                   {/* Others Card */}
-                  <div className="p-3.5 rounded-xl bg-gradient-to-r from-orange-500/15 via-zinc-800/20 to-transparent border border-orange-500/35 flex items-center justify-between shadow-xs">
-                    <div className="flex items-center gap-2.5">
-                      <span className="text-xl">👤</span>
-                      <div>
-                        <span className="font-bold text-xs text-orange-300">Others / New Guy</span>
-                        <span className="block text-[11px] text-orange-200/70">{overallLikeStats.others.postsCount} Posts Managed</span>
+                  <div className="p-3.5 rounded-xl bg-[#181d2c] border border-slate-700 flex flex-col justify-between gap-2.5 shadow-xs">
+                    <div className="flex items-start justify-between">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xl">👤</span>
+                        <div>
+                          <span className="font-bold text-xs text-slate-300 block">Others / New Guy</span>
+                          <span className="text-[11px] text-slate-400">
+                            {overallLikeStats.others.postsCount} Posts ({overallLikeStats.others.paidPostsCount} Paid, {overallLikeStats.others.pendingPostsCount} Due)
+                          </span>
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        {overallLikeStats.others.pendingCost > 0 ? (
+                          <div>
+                            <span className="font-extrabold text-base text-slate-200 font-mono block">
+                              ₹{overallLikeStats.others.pendingCost.toLocaleString('en-IN')}
+                            </span>
+                            <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Due to Pay</span>
+                          </div>
+                        ) : (
+                          <div>
+                            <span className="font-bold text-xs text-emerald-400 flex items-center justify-end gap-1">
+                              <Check className="w-3 h-3 stroke-[2.5]" />
+                              <span>₹0 Due</span>
+                            </span>
+                            <span className="text-[10px] text-emerald-400/70 font-semibold uppercase tracking-wider">Settled</span>
+                          </div>
+                        )}
                       </div>
                     </div>
-                    <div className="text-right">
-                      <span className="font-bold text-sm text-orange-300">
-                        ₹{overallLikeStats.others.totalCost.toLocaleString('en-IN')}
-                      </span>
-                      <span className="block text-[10px] text-orange-400/60 uppercase tracking-wider font-semibold">Payout</span>
+
+                    <div className="pt-2 border-t border-slate-800 flex items-center justify-between text-[11px]">
+                      <span className="text-slate-400">Total Billed: <b className="text-slate-200 font-mono">₹{overallLikeStats.others.totalCost.toLocaleString('en-IN')}</b></span>
+                      {overallLikeStats.others.pendingCost > 0 ? (
+                        <button
+                          type="button"
+                          onClick={() => handleSettleHandlerPayouts('Others', 'all')}
+                          className="px-2.5 py-1 rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-100 font-bold text-[10px] flex items-center gap-1 transition-all cursor-pointer shadow-xs"
+                        >
+                          <Check className="w-3 h-3 stroke-[2.5]" />
+                          <span>Mark Paid</span>
+                        </button>
+                      ) : (
+                        <span className="text-emerald-400 text-[10px] font-semibold">✓ Paid in Full</span>
+                      )}
                     </div>
                   </div>
                 </div>
               </div>
 
               {/* Clean Analytics Table */}
-              <div className="rounded-2xl border border-zinc-800 overflow-hidden bg-[#100e14] shadow-sm">
-                <div className="px-4 py-3 bg-[#15131b] border-b border-zinc-800 flex items-center justify-between">
+              <div className="rounded-2xl border border-slate-800 overflow-hidden bg-[#141824] shadow-sm">
+                <div className="px-4 py-3 bg-[#10131d] border-b border-slate-800 flex items-center justify-between">
                   <div className="flex items-center gap-2">
-                    <BarChart3 className="w-4 h-4 text-amber-400" />
-                    <h3 className="font-bold text-xs tracking-wider uppercase bg-gradient-to-r from-amber-300 via-rose-300 to-pink-300 bg-clip-text text-transparent">
+                    <BarChart3 className="w-4 h-4 text-cyan-400" />
+                    <h3 className="font-bold text-xs tracking-wider uppercase text-slate-200">
                       Monthly Analytics Breakdown
                     </h3>
                   </div>
-                  <span className="text-[11px] text-zinc-400">
+                  <span className="text-[11px] text-slate-400">
                     Auto-computed totals
                   </span>
                 </div>
@@ -1109,7 +1427,7 @@ export function CollabManagerModal({ isOpen, onClose }: CollabManagerModalProps)
                 <div className="overflow-x-auto no-scrollbar">
                   <table className="w-full text-left text-xs border-collapse">
                     <thead>
-                      <tr className="bg-[#181520] text-zinc-400 font-semibold text-[11px] border-b border-zinc-800">
+                      <tr className="bg-[#10131d] text-slate-400 font-semibold text-[11px] border-b border-slate-800">
                         <th className="px-4 py-3">Month</th>
                         <th className="px-4 py-3 text-center">Deals</th>
                         <th className="px-4 py-3 text-right">Revenue</th>
@@ -1120,34 +1438,34 @@ export function CollabManagerModal({ isOpen, onClose }: CollabManagerModalProps)
                         <th className="px-4 py-3 text-center">Action</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-zinc-800/70 font-medium">
+                    <tbody className="divide-y divide-slate-800/80 font-medium">
                       {allMonthsSummary.map((m) => (
-                        <tr key={m.month} className="hover:bg-rose-500/5 transition-colors">
-                          <td className="px-4 py-3 font-semibold text-zinc-100">
+                        <tr key={m.month} className="hover:bg-slate-800/40 transition-colors">
+                          <td className="px-4 py-3 font-semibold text-slate-100">
                             {m.monthName}
                           </td>
-                          <td className="px-4 py-3 text-center text-zinc-300">
+                          <td className="px-4 py-3 text-center text-slate-300">
                             {m.totalCollabs}
                           </td>
-                          <td className="px-4 py-3 text-right font-bold text-amber-300">
+                          <td className="px-4 py-3 text-right font-bold text-cyan-400 font-mono">
                             ₹{m.totalRevenue.toLocaleString('en-IN')}
                           </td>
-                          <td className="px-4 py-3 text-right text-rose-400">
+                          <td className="px-4 py-3 text-right text-slate-300 font-mono">
                             {m.totalSpend > 0 ? `₹${m.totalSpend.toLocaleString('en-IN')}` : '-'}
                           </td>
-                          <td className="px-4 py-3 text-right font-bold bg-gradient-to-r from-amber-300 to-rose-300 bg-clip-text text-transparent">
+                          <td className="px-4 py-3 text-right font-bold text-cyan-300 font-mono">
                             ₹{m.totalProfit.toLocaleString('en-IN')}
                           </td>
-                          <td className="px-4 py-3 text-right font-semibold text-emerald-400">
+                          <td className="px-4 py-3 text-right font-semibold text-emerald-400 font-mono">
                             ₹{(m.amountCollected || 0).toLocaleString('en-IN')}
                           </td>
                           <td className="px-4 py-3 text-right">
                             {m.amountPending > 0 ? (
-                              <span className="px-2 py-0.5 rounded-full bg-orange-500/15 text-orange-300 border border-orange-500/30 text-[11px] font-semibold">
+                              <span className="px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-300 border border-amber-500/30 text-[11px] font-semibold font-mono">
                                 ₹{m.amountPending.toLocaleString('en-IN')}
                               </span>
                             ) : (
-                              <span className="text-zinc-500">-</span>
+                              <span className="text-slate-500">-</span>
                             )}
                           </td>
                           <td className="px-4 py-3 text-center">
@@ -1157,7 +1475,7 @@ export function CollabManagerModal({ isOpen, onClose }: CollabManagerModalProps)
                                 setSelectedMonth(m.month);
                                 setActiveView('month');
                               }}
-                              className="px-2.5 py-1 rounded-lg bg-zinc-800 hover:bg-gradient-to-r hover:from-amber-500 hover:to-rose-500 hover:text-slate-950 text-zinc-300 text-[11px] font-semibold transition-all cursor-pointer"
+                              className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-cyan-500 hover:text-slate-950 text-slate-300 text-[11px] font-semibold transition-all cursor-pointer"
                             >
                               Open CRM &rarr;
                             </button>
@@ -1166,15 +1484,15 @@ export function CollabManagerModal({ isOpen, onClose }: CollabManagerModalProps)
                       ))}
 
                       {/* Total Summary Row */}
-                      <tr className="bg-[#181520] font-bold text-xs border-t-2 border-amber-500/30">
-                        <td className="px-4 py-3 text-amber-300">TOTAL</td>
-                        <td className="px-4 py-3 text-center text-zinc-200">{overallTotals.totalCollabs}</td>
-                        <td className="px-4 py-3 text-right text-amber-300">₹{overallTotals.totalRevenue.toLocaleString('en-IN')}</td>
-                        <td className="px-4 py-3 text-right text-rose-400">₹{overallTotals.totalSpend.toLocaleString('en-IN')}</td>
-                        <td className="px-4 py-3 text-right bg-gradient-to-r from-amber-300 to-rose-300 bg-clip-text text-transparent">₹{overallTotals.totalProfit.toLocaleString('en-IN')}</td>
-                        <td className="px-4 py-3 text-right text-emerald-400">₹{overallTotals.amountCollected.toLocaleString('en-IN')}</td>
-                        <td className="px-4 py-3 text-right text-orange-400">₹{overallTotals.amountPending.toLocaleString('en-IN')}</td>
-                        <td className="px-4 py-3 text-center text-zinc-400 text-[11px]">All Months</td>
+                      <tr className="bg-[#10131d] font-bold text-xs border-t-2 border-slate-700">
+                        <td className="px-4 py-3 text-cyan-400">TOTAL</td>
+                        <td className="px-4 py-3 text-center text-slate-200">{overallTotals.totalCollabs}</td>
+                        <td className="px-4 py-3 text-right text-cyan-400 font-mono">₹{overallTotals.totalRevenue.toLocaleString('en-IN')}</td>
+                        <td className="px-4 py-3 text-right text-slate-300 font-mono">₹{overallTotals.totalSpend.toLocaleString('en-IN')}</td>
+                        <td className="px-4 py-3 text-right text-cyan-300 font-mono">₹{overallTotals.totalProfit.toLocaleString('en-IN')}</td>
+                        <td className="px-4 py-3 text-right text-emerald-400 font-mono">₹{overallTotals.amountCollected.toLocaleString('en-IN')}</td>
+                        <td className="px-4 py-3 text-right text-amber-400 font-mono">₹{overallTotals.amountPending.toLocaleString('en-IN')}</td>
+                        <td className="px-4 py-3 text-center text-slate-400 text-[11px]">All Months</td>
                       </tr>
                     </tbody>
                   </table>
@@ -1184,41 +1502,41 @@ export function CollabManagerModal({ isOpen, onClose }: CollabManagerModalProps)
           ) : (
             /* VIEW 2: INDIVIDUAL MONTH CRM TABLE */
             <div className="space-y-5 animate-fadeIn">
-              {/* Monthly KPI Cards (5 Sections - Sunset Rose/Gold Palette) */}
+              {/* Monthly KPI Cards (5 Sections - Clean Slate & Steel Cyan) */}
               <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3.5">
                 {/* 1. Revenue */}
-                <div className="p-4 rounded-2xl bg-gradient-to-br from-amber-500/10 via-zinc-900/70 to-zinc-950 border border-amber-500/25 shadow-sm">
-                  <span className="text-xs font-semibold text-amber-200/75">Revenue ({monthSummary.monthLabel})</span>
-                  <p className="font-bold text-2xl text-amber-300 mt-1">
+                <div className="p-4 rounded-2xl bg-[#141824] border border-slate-800 shadow-sm">
+                  <span className="text-xs font-semibold text-slate-400">Revenue ({monthSummary.monthLabel})</span>
+                  <p className="font-bold text-2xl text-cyan-400 mt-1 font-mono">
                     ₹{monthSummary.totalRevenue.toLocaleString('en-IN')}
                   </p>
-                  <span className="text-[11px] text-amber-400/70">{monthSummary.totalCollabs} Deals Recorded</span>
+                  <span className="text-[11px] text-slate-500">{monthSummary.totalCollabs} Deals Recorded</span>
                 </div>
 
                 {/* 2. Spend / Expenses */}
-                <div className="p-4 rounded-2xl bg-gradient-to-br from-rose-500/10 via-zinc-900/70 to-zinc-950 border border-rose-500/25 shadow-sm">
-                  <span className="text-xs font-semibold text-rose-200/75">Spend / Expenses</span>
-                  <p className="font-bold text-2xl text-rose-400 mt-1">
+                <div className="p-4 rounded-2xl bg-[#141824] border border-slate-800 shadow-sm">
+                  <span className="text-xs font-semibold text-slate-400">Spend / Expenses</span>
+                  <p className="font-bold text-2xl text-slate-300 mt-1 font-mono">
                     ₹{monthSummary.totalSpend.toLocaleString('en-IN')}
                   </p>
-                  <span className="text-[11px] text-rose-300/70">Outsourced &amp; Production</span>
+                  <span className="text-[11px] text-slate-500">Outsourced &amp; Production</span>
                 </div>
 
                 {/* 3. Net Profit (Hero) */}
-                <div className="p-4 rounded-2xl bg-gradient-to-br from-amber-500/20 via-rose-500/15 to-zinc-950 border border-amber-500/40 shadow-md shadow-rose-950/30">
-                  <span className="text-xs font-bold bg-gradient-to-r from-amber-300 to-rose-300 bg-clip-text text-transparent">Net Profit</span>
-                  <p className="font-extrabold text-2xl bg-gradient-to-r from-amber-200 via-rose-200 to-pink-200 bg-clip-text text-transparent mt-1">
+                <div className="p-4 rounded-2xl bg-gradient-to-br from-cyan-950/30 via-[#161c2c] to-[#121520] border border-cyan-500/35 shadow-sm">
+                  <span className="text-xs font-bold text-cyan-300">Net Profit</span>
+                  <p className="font-extrabold text-2xl text-cyan-300 mt-1 font-mono">
                     ₹{monthSummary.totalProfit.toLocaleString('en-IN')}
                   </p>
-                  <span className="text-[11px] text-rose-300 font-semibold">
+                  <span className="text-[11px] text-cyan-400/80 font-medium">
                     Margin: {monthSummary.totalRevenue > 0 ? Math.round((monthSummary.totalProfit / monthSummary.totalRevenue) * 100) : 0}%
                   </span>
                 </div>
 
                 {/* 4. Amount Collected */}
-                <div className="p-4 rounded-2xl bg-gradient-to-br from-emerald-500/10 via-zinc-900/70 to-zinc-950 border border-emerald-500/25 shadow-sm">
-                  <span className="text-xs font-semibold text-emerald-200/75">Amount Collected</span>
-                  <p className="font-bold text-2xl text-emerald-400 mt-1">
+                <div className="p-4 rounded-2xl bg-[#141824] border border-slate-800 shadow-sm">
+                  <span className="text-xs font-semibold text-slate-400">Amount Collected</span>
+                  <p className="font-bold text-2xl text-emerald-400 mt-1 font-mono">
                     ₹{monthSummary.amountCollected.toLocaleString('en-IN')}
                   </p>
                   <span className="text-[11px] text-emerald-400/80 font-medium">
@@ -1227,43 +1545,50 @@ export function CollabManagerModal({ isOpen, onClose }: CollabManagerModalProps)
                 </div>
 
                 {/* 5. Amount Need to be Collected */}
-                <div className="p-4 rounded-2xl bg-gradient-to-br from-orange-500/10 via-zinc-900/70 to-zinc-950 border border-orange-500/25 shadow-sm col-span-2 sm:col-span-1">
-                  <span className="text-xs font-semibold text-orange-200/75">Amount to Collect</span>
-                  <p className="font-bold text-2xl text-orange-400 mt-1">
+                <div className="p-4 rounded-2xl bg-[#141824] border border-slate-800 shadow-sm col-span-2 sm:col-span-1">
+                  <span className="text-xs font-semibold text-slate-400">Amount to Collect</span>
+                  <p className="font-bold text-2xl text-amber-400 mt-1 font-mono">
                     ₹{monthSummary.amountPending.toLocaleString('en-IN')}
                   </p>
-                  <span className="text-[11px] text-orange-400/80 font-medium">
+                  <span className="text-[11px] text-amber-400/80 font-medium">
                     {monthSummary.pendingCount} Deals Pending
                   </span>
                 </div>
               </div>
 
               {/* Likes Handlers Summary Bar & Quick-Filter Selector */}
-              <div className="p-3.5 rounded-2xl bg-[#110f16] border border-amber-500/25 flex flex-col md:flex-row items-start md:items-center justify-between gap-3 shadow-xs">
+              <div className="p-3.5 rounded-2xl bg-[#141824] border border-slate-800 flex flex-col md:flex-row items-start md:items-center justify-between gap-3 shadow-xs">
                 <div className="flex items-center gap-2.5">
-                  <div className="w-6 h-6 rounded-md bg-gradient-to-br from-amber-500/25 to-rose-500/25 text-amber-300 border border-amber-500/40 flex items-center justify-center text-xs shadow-xs">
+                  <div className="w-6 h-6 rounded-md bg-cyan-500/15 text-cyan-400 border border-cyan-500/30 flex items-center justify-center text-xs shadow-xs">
                     👑
                   </div>
                   <div>
-                    <span className="font-bold text-xs text-zinc-100">
+                    <span className="font-bold text-xs text-slate-200">
                       Likes Handlers ({monthSummary.monthLabel}):
                     </span>
-                    <span className="text-[11px] text-zinc-400 ml-1.5">
-                      {monthLikeStats.totalPostsWithLikes} Posts with Likes • Total Payout: <span className="text-amber-300 font-semibold">₹{monthLikeStats.totalLikesCost.toLocaleString('en-IN')}</span>
+                    <span className="text-[11px] text-slate-400 ml-1.5">
+                      {monthLikeStats.totalPostsWithLikes} Posts • Total Likes:{' '}
+                      <span className="text-slate-200 font-semibold font-mono">₹{monthLikeStats.totalLikesCost.toLocaleString('en-IN')}</span>
+                      {' '}• Due:{' '}
+                      {monthLikeStats.totalLikesPending > 0 ? (
+                        <span className="text-amber-400 font-bold font-mono">₹{monthLikeStats.totalLikesPending.toLocaleString('en-IN')}</span>
+                      ) : (
+                        <span className="text-emerald-400 font-semibold">₹0 (All Settled)</span>
+                      )}
                     </span>
                   </div>
                 </div>
 
                 <div className="flex items-center gap-1.5 flex-wrap">
-                  <span className="text-[11px] text-zinc-400 mr-1">Filter:</span>
+                  <span className="text-[11px] text-slate-400 mr-1">Filter:</span>
                   {/* All filter */}
                   <button
                     type="button"
                     onClick={() => setLikeFilter('all')}
                     className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
                       likeFilter === 'all'
-                        ? 'bg-gradient-to-r from-amber-500 to-rose-500 text-slate-950 shadow-xs'
-                        : 'bg-zinc-800 text-zinc-300 hover:bg-zinc-700'
+                        ? 'bg-cyan-500 text-slate-950 font-bold shadow-xs'
+                        : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
                     }`}
                   >
                     All ({monthSummary.totalCollabs})
@@ -1275,11 +1600,16 @@ export function CollabManagerModal({ isOpen, onClose }: CollabManagerModalProps)
                     onClick={() => setLikeFilter(likeFilter === 'Prince' ? 'all' : 'Prince')}
                     className={`px-2.5 py-1 rounded-lg text-xs font-semibold flex items-center gap-1.5 border transition-all cursor-pointer ${
                       likeFilter === 'Prince'
-                        ? 'bg-amber-500 text-slate-950 border-amber-400 shadow-xs'
-                        : 'bg-amber-500/15 text-amber-300 border-amber-500/35 hover:bg-amber-500/25'
+                        ? 'bg-cyan-500 text-slate-950 border-cyan-400 font-bold shadow-xs'
+                        : 'bg-cyan-500/10 text-cyan-300 border-cyan-500/30 hover:bg-cyan-500/20'
                     }`}
                   >
-                    <span>👑 Prince: {monthLikeStats.prince.postsCount} (₹{monthLikeStats.prince.totalCost.toLocaleString('en-IN')})</span>
+                    <span>👑 Prince: {monthLikeStats.prince.postsCount}</span>
+                    <span className="font-mono text-[11px] font-bold">
+                      {monthLikeStats.prince.pendingCost > 0
+                        ? `(₹${monthLikeStats.prince.pendingCost.toLocaleString('en-IN')} Due)`
+                        : '(₹0 Due)'}
+                    </span>
                   </button>
 
                   {/* Shivani chip */}
@@ -1288,11 +1618,16 @@ export function CollabManagerModal({ isOpen, onClose }: CollabManagerModalProps)
                     onClick={() => setLikeFilter(likeFilter === 'Shivani' ? 'all' : 'Shivani')}
                     className={`px-2.5 py-1 rounded-lg text-xs font-semibold flex items-center gap-1.5 border transition-all cursor-pointer ${
                       likeFilter === 'Shivani'
-                        ? 'bg-rose-500 text-slate-950 border-rose-400 shadow-xs'
-                        : 'bg-rose-500/15 text-rose-300 border-rose-500/35 hover:bg-rose-500/25'
+                        ? 'bg-indigo-500 text-white border-indigo-400 font-bold shadow-xs'
+                        : 'bg-indigo-500/10 text-indigo-300 border-indigo-500/30 hover:bg-indigo-500/20'
                     }`}
                   >
-                    <span>🌸 Shivani: {monthLikeStats.shivani.postsCount} (₹{monthLikeStats.shivani.totalCost.toLocaleString('en-IN')})</span>
+                    <span>🌸 Shivani: {monthLikeStats.shivani.postsCount}</span>
+                    <span className="font-mono text-[11px] font-bold">
+                      {monthLikeStats.shivani.pendingCost > 0
+                        ? `(₹${monthLikeStats.shivani.pendingCost.toLocaleString('en-IN')} Due)`
+                        : '(₹0 Due)'}
+                    </span>
                   </button>
 
                   {monthLikeStats.others.postsCount > 0 && (
@@ -1301,26 +1636,114 @@ export function CollabManagerModal({ isOpen, onClose }: CollabManagerModalProps)
                       onClick={() => setLikeFilter(likeFilter === 'Others' ? 'all' : 'Others')}
                       className={`px-2.5 py-1 rounded-lg text-xs font-semibold flex items-center gap-1.5 border transition-all cursor-pointer ${
                         likeFilter === 'Others'
-                          ? 'bg-orange-500 text-slate-950 border-orange-400 shadow-xs'
-                          : 'bg-orange-500/15 text-orange-300 border-orange-500/35 hover:bg-orange-500/25'
+                          ? 'bg-slate-700 text-white border-slate-600 font-bold shadow-xs'
+                          : 'bg-slate-800 text-slate-300 border-slate-700 hover:bg-slate-700'
                       }`}
                     >
-                      <span>👤 Others: {monthLikeStats.others.postsCount} (₹{monthLikeStats.others.totalCost.toLocaleString('en-IN')})</span>
+                      <span>👤 Others: {monthLikeStats.others.postsCount}</span>
+                      <span className="font-mono text-[11px] font-bold">
+                        {monthLikeStats.others.pendingCost > 0
+                          ? `(₹${monthLikeStats.others.pendingCost.toLocaleString('en-IN')} Due)`
+                          : '(₹0 Due)'}
+                      </span>
+                    </button>
+                  )}
+
+                  {monthLikeStats.totalLikesPending > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => handleSettleHandlerPayouts('All', selectedMonth)}
+                      className="px-2.5 py-1 rounded-lg bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold text-xs flex items-center gap-1 shadow-xs transition-all cursor-pointer ml-1"
+                      title="Mark all pending handler payouts in this month as Paid"
+                    >
+                      <Check className="w-3 h-3 stroke-[2.5]" />
+                      <span>Settle (₹{monthLikeStats.totalLikesPending.toLocaleString('en-IN')})</span>
                     </button>
                   )}
                 </div>
               </div>
 
+              {/* 1-Click Master Settlement Banner */}
+              {(monthSummary.amountPending > 0 || monthLikeStats.totalLikesPending > 0) ? (
+                <div className="p-3.5 rounded-2xl bg-[#141928] border border-cyan-500/35 flex flex-col md:flex-row items-start md:items-center justify-between gap-3 shadow-md shadow-slate-950/40 animate-fadeIn">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-8 h-8 rounded-xl bg-cyan-500/15 text-cyan-400 border border-cyan-500/30 flex items-center justify-center font-bold text-sm shadow-xs shrink-0">
+                      ⚡
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <h4 className="font-bold text-xs text-slate-100">
+                          1-Click Settlement ({monthSummary.monthLabel})
+                        </h4>
+                        <span className="px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-300 border border-amber-500/30 text-[10px] font-bold font-mono">
+                          ₹{(monthSummary.amountPending + monthLikeStats.totalLikesPending).toLocaleString('en-IN')} Total Unsettled
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-slate-400 mt-0.5">
+                        Brand Deals Due: <span className="text-amber-400 font-mono font-semibold">₹{monthSummary.amountPending.toLocaleString('en-IN')}</span> ({monthSummary.pendingCount} deals) • Handler Likes Due: <span className="text-cyan-300 font-mono font-semibold">₹{monthLikeStats.totalLikesPending.toLocaleString('en-IN')}</span> ({monthLikeStats.prince.pendingPostsCount + monthLikeStats.shivani.pendingPostsCount + monthLikeStats.others.pendingPostsCount} posts)
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2 flex-wrap w-full md:w-auto">
+                    {/* Master Settle Everything */}
+                    <button
+                      type="button"
+                      onClick={() => handleSettleEverything(selectedMonth)}
+                      className="px-3.5 py-2 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold text-xs flex items-center gap-1.5 shadow-sm shadow-cyan-950/50 transition-all cursor-pointer grow md:grow-0 justify-center"
+                      title="Mark all brand deal payments and all like handler fees as Paid in 1 click"
+                    >
+                      <Zap className="w-3.5 h-3.5 fill-current" />
+                      <span>⚡ 1-Click Settle Everything</span>
+                    </button>
+
+                    {/* Settle Likes Only */}
+                    {monthLikeStats.totalLikesPending > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => handleSettleHandlerPayouts('All', selectedMonth)}
+                        className="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-cyan-300 border border-cyan-500/30 font-semibold text-xs flex items-center gap-1.5 transition-all cursor-pointer"
+                        title="Mark only like handlers as Paid"
+                      >
+                        <Check className="w-3.5 h-3.5" />
+                        <span>Settle Likes (₹{monthLikeStats.totalLikesPending.toLocaleString('en-IN')})</span>
+                      </button>
+                    )}
+
+                    {/* Mark Deals Paid Only */}
+                    {monthSummary.amountPending > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => handleSettleAllBrandDeals(selectedMonth)}
+                        className="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-emerald-300 border border-emerald-500/30 font-semibold text-xs flex items-center gap-1.5 transition-all cursor-pointer"
+                        title="Mark all deals as Paid"
+                      >
+                        <Check className="w-3.5 h-3.5" />
+                        <span>Mark Deals Paid (₹{monthSummary.amountPending.toLocaleString('en-IN')})</span>
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ) : (
+                <div className="px-4 py-2.5 rounded-xl bg-emerald-950/20 border border-emerald-500/30 flex items-center justify-between text-xs animate-fadeIn">
+                  <div className="flex items-center gap-2 text-emerald-400 font-semibold">
+                    <Check className="w-4 h-4 stroke-[2.5]" />
+                    <span>All deals and like handler fees for {monthSummary.monthLabel} are 100% Settled (₹0 Due)!</span>
+                  </div>
+                  <span className="text-[11px] text-emerald-400/80 font-mono font-semibold">✓ Settled</span>
+                </div>
+              )}
+
               {/* Table Toolbar */}
               <div className="flex flex-col sm:flex-row items-center justify-between gap-3">
                 <div className="relative w-full sm:w-72">
-                  <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" />
+                  <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
                   <input
                     type="text"
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
                     placeholder="Search brand, campaign, notes..."
-                    className="w-full pl-9 pr-3 py-2 rounded-xl border border-zinc-800 bg-[#121017] text-xs text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-amber-400 focus:ring-1 focus:ring-amber-400"
+                    className="w-full pl-9 pr-3 py-2 rounded-xl border border-slate-800 bg-[#121520] text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:border-cyan-400 focus:ring-1 focus:ring-cyan-400"
                   />
                 </div>
 
@@ -1328,7 +1751,7 @@ export function CollabManagerModal({ isOpen, onClose }: CollabManagerModalProps)
                   <select
                     value={statusFilter}
                     onChange={(e) => setStatusFilter(e.target.value as any)}
-                    className="px-3 py-2 rounded-xl border border-zinc-800 bg-[#121017] text-xs text-zinc-200 focus:outline-none cursor-pointer"
+                    className="px-3 py-2 rounded-xl border border-slate-800 bg-[#121520] text-xs text-slate-200 focus:outline-none cursor-pointer"
                   >
                     <option value="all">All Statuses</option>
                     <option value="Paid">Paid</option>
@@ -1340,7 +1763,7 @@ export function CollabManagerModal({ isOpen, onClose }: CollabManagerModalProps)
                   <select
                     value={likeFilter}
                     onChange={(e) => setLikeFilter(e.target.value as any)}
-                    className="px-3 py-2 rounded-xl border border-zinc-800 bg-[#121017] text-xs text-zinc-200 focus:outline-none cursor-pointer"
+                    className="px-3 py-2 rounded-xl border border-slate-800 bg-[#121520] text-xs text-slate-200 focus:outline-none cursor-pointer"
                   >
                     <option value="all">All Handlers</option>
                     <option value="Prince">👑 Prince</option>
@@ -1351,28 +1774,37 @@ export function CollabManagerModal({ isOpen, onClose }: CollabManagerModalProps)
                 </div>
               </div>
 
-              {/* Clean Brand Deals Table with Expandable Rows (Obsidian & Sunset Rose/Gold) */}
-              <div className="rounded-2xl border border-zinc-800 overflow-hidden bg-[#100e14] shadow-sm">
+              {/* Clean Brand Deals Table with Expandable Rows & Checkboxes */}
+              <div className="rounded-2xl border border-slate-800 overflow-hidden bg-[#141824] shadow-sm">
                 <div className="overflow-x-auto no-scrollbar">
                   <table className="w-full text-left text-xs border-collapse">
                     <thead>
-                      <tr className="bg-[#181520] text-zinc-400 font-semibold text-[11px] border-b border-zinc-800">
+                      <tr className="bg-[#10131d] text-slate-400 font-semibold text-[11px] border-b border-slate-800">
+                        <th className="w-10 px-3 py-3 text-center">
+                          <input
+                            type="checkbox"
+                            checked={isAllFilteredSelected}
+                            onChange={handleToggleSelectAll}
+                            className="w-4 h-4 rounded border-slate-700 bg-slate-900 text-cyan-500 focus:ring-cyan-400 focus:ring-offset-slate-900 cursor-pointer"
+                            title="Select / Deselect all visible deals"
+                          />
+                        </th>
                         <th className="px-4 py-3">Brand &amp; Deliverable</th>
                         <th className="px-4 py-3">Date</th>
                         <th className="px-4 py-3 text-right">Pay Breakdown</th>
                         <th className="px-4 py-3 text-right">Total Fee</th>
                         <th className="px-4 py-3 text-right">Spend</th>
                         <th className="px-4 py-3 text-right">Net Profit</th>
-                        <th className="px-4 py-3 text-center">Likes Handler</th>
+                        <th className="px-4 py-3 text-center">Likes Handler &amp; Payout</th>
                         <th className="px-4 py-3 text-center">Payment Status</th>
                         <th className="px-4 py-3 text-right">Actions</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-zinc-800/70 font-medium">
+                    <tbody className="divide-y divide-slate-800/80 font-medium">
                       {filteredCollabs.length === 0 ? (
                         <tr>
-                          <td colSpan={9} className="p-8 text-center text-xs text-zinc-500">
-                            No collaborations found matching the filters. Click <b className="text-amber-300">Add Deal</b> to record a brand collaboration!
+                          <td colSpan={10} className="p-8 text-center text-xs text-slate-500">
+                            No collaborations found matching the filters. Click <b className="text-cyan-400">Add Deal</b> to record a brand collaboration!
                           </td>
                         </tr>
                       ) : (
@@ -1381,45 +1813,59 @@ export function CollabManagerModal({ isOpen, onClose }: CollabManagerModalProps)
                           const totalAmt = (item.basePay || 0) + (item.bonus || 0) || item.amount || 0;
                           const net = totalAmt - (item.spending || 0);
                           const isExpanded = expandedRowId === item.id;
+                          const isSelected = selectedCollabIds.includes(item.id);
 
                           const isPrince = item.likeHandler?.toLowerCase().includes('prince');
                           const isShivani = item.likeHandler?.toLowerCase().includes('shivani');
                           const hasOtherHandler = item.likeHandler && item.likeHandler.toLowerCase() !== 'none' && !isPrince && !isShivani;
+                          const hasHandler = isPrince || isShivani || hasOtherHandler;
+                          const isHandlerPaid = item.likePaymentStatus === 'Paid';
+                          const itemLikeCost = item.likeCost !== undefined ? item.likeCost : (item.spending || 0);
 
                           return (
                             <React.Fragment key={item.id}>
                               <tr
-                                className={`hover:bg-rose-500/5 transition-colors ${
-                                  isExpanded ? 'bg-[#181520]' : ''
+                                className={`hover:bg-slate-800/40 transition-colors ${
+                                  isSelected ? 'bg-cyan-950/20' : isExpanded ? 'bg-[#181d2c]' : ''
                                 }`}
                               >
+                                {/* Checkbox */}
+                                <td className="px-3 py-3.5 text-center">
+                                  <input
+                                    type="checkbox"
+                                    checked={isSelected}
+                                    onChange={() => handleToggleSelectRow(item.id)}
+                                    className="w-4 h-4 rounded border-slate-700 bg-slate-900 text-cyan-500 focus:ring-cyan-400 focus:ring-offset-slate-900 cursor-pointer"
+                                  />
+                                </td>
+
                                 {/* Brand & Deliverable */}
                                 <td className="px-4 py-3.5">
                                   <div className="flex items-center gap-2">
                                     <button
                                       type="button"
                                       onClick={() => setExpandedRowId(isExpanded ? null : item.id)}
-                                      className="text-zinc-500 hover:text-zinc-300 cursor-pointer"
+                                      className="text-slate-500 hover:text-slate-300 cursor-pointer"
                                       title="Toggle details"
                                     >
                                       {isExpanded ? (
-                                        <ChevronDown className="w-3.5 h-3.5 text-amber-400" />
+                                        <ChevronDown className="w-3.5 h-3.5 text-cyan-400" />
                                       ) : (
                                         <ChevronRight className="w-3.5 h-3.5" />
                                       )}
                                     </button>
                                     <div>
                                       <div className="flex items-center gap-1.5">
-                                        <span className="font-bold text-zinc-100 text-sm">
+                                        <span className="font-bold text-slate-100 text-sm">
                                           {item.brandName}
                                         </span>
-                                        <span className="px-2 py-0.5 rounded-md text-[10px] font-semibold bg-zinc-800 text-zinc-300 border border-zinc-700">
+                                        <span className="px-2 py-0.5 rounded-md text-[10px] font-semibold bg-slate-800 text-slate-300 border border-slate-700">
                                           {item.deliverableType || 'Post'}
                                           {item.deliverableQty && item.deliverableQty !== 'Single' ? ` (${item.deliverableQty})` : ''}
                                         </span>
                                       </div>
                                       {item.campaign && (
-                                        <p className="text-[11px] text-zinc-400 font-normal">
+                                        <p className="text-[11px] text-slate-400 font-normal">
                                           {item.campaign}
                                         </p>
                                       )}
@@ -1428,7 +1874,7 @@ export function CollabManagerModal({ isOpen, onClose }: CollabManagerModalProps)
                                 </td>
 
                                 {/* Date */}
-                                <td className="px-4 py-3.5 text-xs text-zinc-300 font-mono">
+                                <td className="px-4 py-3.5 text-xs text-slate-300 font-mono">
                                   {item.scheduledDate || '-'}
                                 </td>
 
@@ -1436,54 +1882,74 @@ export function CollabManagerModal({ isOpen, onClose }: CollabManagerModalProps)
                                 <td className="px-4 py-3.5 text-right text-xs">
                                   {item.bonus > 0 ? (
                                     <div className="space-y-0.5">
-                                      <span className="text-zinc-200 font-medium">₹{item.basePay.toLocaleString('en-IN')}</span>
-                                      <span className="block text-[10px] text-amber-400">+₹{item.bonus.toLocaleString('en-IN')} bonus</span>
+                                      <span className="text-slate-200 font-medium">₹{item.basePay.toLocaleString('en-IN')}</span>
+                                      <span className="block text-[10px] text-cyan-400">+₹{item.bonus.toLocaleString('en-IN')} bonus</span>
                                     </div>
                                   ) : (
-                                    <span className="text-zinc-300">₹{(item.basePay || item.amount).toLocaleString('en-IN')}</span>
+                                    <span className="text-slate-300 font-mono">₹{(item.basePay || item.amount).toLocaleString('en-IN')}</span>
                                   )}
                                 </td>
 
                                 {/* Total Amount */}
-                                <td className="px-4 py-3.5 font-bold text-right text-sm text-amber-300">
+                                <td className="px-4 py-3.5 font-bold text-right text-sm text-cyan-400 font-mono">
                                   ₹{totalAmt.toLocaleString('en-IN')}
                                 </td>
 
                                 {/* Spend */}
-                                <td className="px-4 py-3.5 text-right text-xs text-rose-400 font-medium">
+                                <td className="px-4 py-3.5 text-right text-xs text-slate-300 font-mono">
                                   {item.spending ? `₹${item.spending.toLocaleString('en-IN')}` : '-'}
                                 </td>
 
                                 {/* Net Profit */}
-                                <td className="px-4 py-3.5 font-bold text-right text-sm bg-gradient-to-r from-amber-300 to-rose-300 bg-clip-text text-transparent">
+                                <td className="px-4 py-3.5 font-bold text-right text-sm text-cyan-300 font-mono">
                                   ₹{net.toLocaleString('en-IN')}
                                 </td>
 
-                                {/* Likes Handler */}
+                                {/* Likes Handler & Payout (1-Click Payout Toggle) */}
                                 <td className="px-4 py-3.5 text-center">
-                                  {isPrince ? (
-                                    <span className="px-2 py-0.5 rounded-md text-[11px] font-semibold bg-amber-500/15 text-amber-300 border border-amber-500/35 inline-flex items-center gap-1 shadow-xs">
-                                      <span>👑 Prince</span>
-                                      {(item.likeCost || item.spending) > 0 && (
-                                        <span className="text-[10px] opacity-80">(₹{(item.likeCost || item.spending).toLocaleString('en-IN')})</span>
+                                  {hasHandler ? (
+                                    <div className="flex flex-col items-center gap-1">
+                                      {/* Handler Tag */}
+                                      {isPrince ? (
+                                        <span className="px-2 py-0.5 rounded-md text-[11px] font-semibold bg-cyan-500/15 text-cyan-300 border border-cyan-500/30 inline-flex items-center gap-1 shadow-xs">
+                                          👑 Prince
+                                        </span>
+                                      ) : isShivani ? (
+                                        <span className="px-2 py-0.5 rounded-md text-[11px] font-semibold bg-indigo-500/15 text-indigo-300 border border-indigo-500/30 inline-flex items-center gap-1 shadow-xs">
+                                          🌸 Shivani
+                                        </span>
+                                      ) : (
+                                        <span className="px-2 py-0.5 rounded-md text-[11px] font-semibold bg-slate-800 text-slate-300 border border-slate-700 inline-flex items-center gap-1 shadow-xs">
+                                          👤 {item.likeHandler}
+                                        </span>
                                       )}
-                                    </span>
-                                  ) : isShivani ? (
-                                    <span className="px-2 py-0.5 rounded-md text-[11px] font-semibold bg-rose-500/15 text-rose-300 border border-rose-500/35 inline-flex items-center gap-1 shadow-xs">
-                                      <span>🌸 Shivani</span>
-                                      {(item.likeCost || item.spending) > 0 && (
-                                        <span className="text-[10px] opacity-80">(₹{(item.likeCost || item.spending).toLocaleString('en-IN')})</span>
-                                      )}
-                                    </span>
-                                  ) : hasOtherHandler ? (
-                                    <span className="px-2 py-0.5 rounded-md text-[11px] font-semibold bg-orange-500/15 text-orange-300 border border-orange-500/35 inline-flex items-center gap-1 shadow-xs">
-                                      <span>👤 {item.likeHandler}</span>
-                                      {(item.likeCost || item.spending) > 0 && (
-                                        <span className="text-[10px] opacity-80">(₹{(item.likeCost || item.spending).toLocaleString('en-IN')})</span>
-                                      )}
-                                    </span>
+
+                                      {/* 1-Tap Payout Toggle Button */}
+                                      <button
+                                        type="button"
+                                        onClick={() => handleToggleLikePaymentStatus(item)}
+                                        className={`px-2 py-0.5 rounded-full text-[10px] font-semibold inline-flex items-center gap-1 transition-all cursor-pointer shadow-xs ${
+                                          isHandlerPaid
+                                            ? 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 hover:bg-emerald-500/25'
+                                            : 'bg-amber-500/15 text-amber-300 border border-amber-500/30 hover:bg-amber-500/25'
+                                        }`}
+                                        title="Click to toggle handler payout (Paid / Due)"
+                                      >
+                                        {isHandlerPaid ? (
+                                          <>
+                                            <Check className="w-2.5 h-2.5 stroke-[2.5]" />
+                                            <span>Paid ₹{itemLikeCost.toLocaleString('en-IN')}</span>
+                                          </>
+                                        ) : (
+                                          <>
+                                            <Clock className="w-2.5 h-2.5" />
+                                            <span className="font-bold">Due: ₹{itemLikeCost.toLocaleString('en-IN')}</span>
+                                          </>
+                                        )}
+                                      </button>
+                                    </div>
                                   ) : (
-                                    <span className="text-zinc-500 text-xs">-</span>
+                                    <span className="text-slate-500 text-xs">-</span>
                                   )}
                                 </td>
 
@@ -1494,8 +1960,8 @@ export function CollabManagerModal({ isOpen, onClose }: CollabManagerModalProps)
                                     onClick={() => handleTogglePaymentStatus(item)}
                                     className={`px-2.5 py-1 rounded-full text-[11px] font-semibold inline-flex items-center gap-1 transition-all cursor-pointer shadow-xs ${
                                       isPaid
-                                        ? 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/35 hover:bg-emerald-500/25'
-                                        : 'bg-amber-500/15 text-amber-300 border border-amber-500/35 hover:bg-amber-500/25'
+                                        ? 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 hover:bg-emerald-500/25'
+                                        : 'bg-amber-500/15 text-amber-300 border border-amber-500/30 hover:bg-amber-500/25'
                                     }`}
                                     title="Click to toggle Paid/Pending"
                                   >
@@ -1521,7 +1987,7 @@ export function CollabManagerModal({ isOpen, onClose }: CollabManagerModalProps)
                                         href={item.postUrl}
                                         target="_blank"
                                         rel="noreferrer"
-                                        className="p-1 rounded-lg text-zinc-400 hover:text-amber-300 hover:bg-zinc-800 transition-colors"
+                                        className="p-1 rounded-lg text-slate-400 hover:text-cyan-300 hover:bg-slate-800 transition-colors"
                                         title="View Post"
                                       >
                                         <ExternalLink className="w-3.5 h-3.5" />
@@ -1530,7 +1996,7 @@ export function CollabManagerModal({ isOpen, onClose }: CollabManagerModalProps)
                                     <button
                                       type="button"
                                       onClick={() => handleOpenEdit(item)}
-                                      className="p-1 rounded-lg text-zinc-400 hover:text-amber-300 hover:bg-zinc-800 transition-colors cursor-pointer"
+                                      className="p-1 rounded-lg text-slate-400 hover:text-cyan-300 hover:bg-slate-800 transition-colors cursor-pointer"
                                       title="Edit"
                                     >
                                       <Edit2 className="w-3.5 h-3.5" />
@@ -1538,7 +2004,7 @@ export function CollabManagerModal({ isOpen, onClose }: CollabManagerModalProps)
                                     <button
                                       type="button"
                                       onClick={() => handleDeleteCollab(item.id)}
-                                      className="p-1 rounded-lg text-zinc-400 hover:text-rose-400 hover:bg-rose-950/40 transition-colors cursor-pointer"
+                                      className="p-1 rounded-lg text-slate-400 hover:text-rose-400 hover:bg-rose-950/40 transition-colors cursor-pointer"
                                       title="Delete"
                                     >
                                       <Trash2 className="w-3.5 h-3.5" />
@@ -1549,44 +2015,63 @@ export function CollabManagerModal({ isOpen, onClose }: CollabManagerModalProps)
 
                               {/* Expandable Details Drawer */}
                               {isExpanded && (
-                                <tr className="bg-[#14121a] border-b border-zinc-800">
-                                  <td colSpan={9} className="px-6 py-3.5 text-xs">
-                                    <div className="grid grid-cols-2 sm:grid-cols-5 gap-4 text-[11px]">
+                                <tr className="bg-[#121622] border-b border-slate-800">
+                                  <td colSpan={10} className="px-6 py-3.5 text-xs">
+                                    <div className="grid grid-cols-2 sm:grid-cols-6 gap-4 text-[11px]">
                                       <div>
-                                        <span className="text-zinc-500 block mb-0.5">Likes Handler</span>
-                                        <span className="font-bold text-amber-300">
+                                        <span className="text-slate-500 block mb-0.5">Likes Handler</span>
+                                        <span className="font-bold text-cyan-300">
                                           {item.likeHandler || 'None'} {item.likeCost ? `(₹${item.likeCost})` : ''}
                                         </span>
                                       </div>
                                       <div>
-                                        <span className="text-zinc-500 block mb-0.5">Invoice Sent</span>
-                                        <span className="font-semibold text-zinc-200">
+                                        <span className="text-slate-500 block mb-0.5">Handler Payout</span>
+                                        {hasHandler ? (
+                                          <button
+                                            type="button"
+                                            onClick={() => handleToggleLikePaymentStatus(item)}
+                                            className={`px-2 py-0.5 rounded-md font-semibold text-[10px] inline-flex items-center gap-1 cursor-pointer transition-all ${
+                                              isHandlerPaid
+                                                ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                                                : 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
+                                            }`}
+                                            title="Click to toggle"
+                                          >
+                                            {isHandlerPaid ? '✅ Paid (Clear)' : '⏳ Due (To Pay)'}
+                                          </button>
+                                        ) : (
+                                          <span className="text-slate-500">-</span>
+                                        )}
+                                      </div>
+                                      <div>
+                                        <span className="text-slate-500 block mb-0.5">Invoice Sent</span>
+                                        <span className="font-semibold text-slate-200">
                                           {item.invoiceSent || 'No'}
                                         </span>
                                       </div>
                                       <div>
-                                        <span className="text-zinc-500 block mb-0.5">Payment Date</span>
-                                        <span className="font-semibold text-zinc-200 font-mono">
+                                        <span className="text-slate-500 block mb-0.5">Payment Date</span>
+                                        <span className="font-semibold text-slate-200 font-mono">
                                           {item.paymentReceivedDate || '-'}
                                         </span>
                                       </div>
                                       <div>
-                                        <span className="text-zinc-500 block mb-0.5">Payment Mode</span>
-                                        <span className="font-semibold text-zinc-200">
+                                        <span className="text-slate-500 block mb-0.5">Payment Mode</span>
+                                        <span className="font-semibold text-slate-200">
                                           {item.paymentMode || 'UPI'}
                                         </span>
                                       </div>
                                       <div>
-                                        <span className="text-zinc-500 block mb-0.5">Work Status</span>
-                                        <span className="font-semibold text-zinc-200">
+                                        <span className="text-slate-500 block mb-0.5">Work Status</span>
+                                        <span className="font-semibold text-slate-200">
                                           {item.workStatus || 'Completed'}
                                         </span>
                                       </div>
                                     </div>
                                     {item.notes && (
-                                      <div className="mt-2.5 pt-2.5 border-t border-zinc-800">
-                                        <span className="text-zinc-500 block text-[10px] mb-0.5 font-medium">Notes &amp; Requirements</span>
-                                        <p className="text-zinc-300">{item.notes}</p>
+                                      <div className="mt-2.5 pt-2.5 border-t border-slate-800">
+                                        <span className="text-slate-500 block text-[10px] mb-0.5 font-medium">Notes &amp; Requirements</span>
+                                        <p className="text-slate-300">{item.notes}</p>
                                       </div>
                                     )}
                                   </td>
@@ -1600,22 +2085,81 @@ export function CollabManagerModal({ isOpen, onClose }: CollabManagerModalProps)
                   </table>
                 </div>
               </div>
+
+              {/* Sticky Batch Multi-Select Action Bar */}
+              {selectedCollabIds.length > 0 && (
+                <div className="sticky bottom-2 z-30 p-3 rounded-2xl bg-[#141928] border border-cyan-500/40 shadow-2xl shadow-slate-950/90 flex flex-wrap items-center justify-between gap-2.5 animate-fadeIn">
+                  <div className="flex items-center gap-2 text-xs text-slate-200">
+                    <span className="px-2.5 py-1 rounded-lg bg-cyan-500 text-slate-950 font-bold text-xs shadow-xs">
+                      {selectedCollabIds.length} Selected
+                    </span>
+                    <span className="text-slate-300 font-medium hidden sm:inline">Batch Actions:</span>
+                  </div>
+
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <button
+                      type="button"
+                      onClick={() => handleSettleSelectedCollabs('all')}
+                      className="px-3 py-1.5 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold text-xs flex items-center gap-1.5 shadow-sm transition-all cursor-pointer"
+                      title="Settle both deal payment and like handler payouts to ₹0 for selected"
+                    >
+                      <Zap className="w-3.5 h-3.5 fill-current" />
+                      <span>⚡ 1-Click Settle Selected</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => handleSettleSelectedCollabs('likes')}
+                      className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-cyan-300 border border-cyan-500/30 text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer"
+                    >
+                      <Check className="w-3.5 h-3.5" />
+                      <span>Settle Likes</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => handleSettleSelectedCollabs('deals')}
+                      className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-emerald-300 border border-emerald-500/30 text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer"
+                    >
+                      <Check className="w-3.5 h-3.5" />
+                      <span>Mark Deals Paid</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={handleDeleteSelected}
+                      className="px-2.5 py-1.5 rounded-xl bg-rose-950/40 hover:bg-rose-900/60 text-rose-300 border border-rose-800/40 text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                      <span>Delete</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setSelectedCollabIds([])}
+                      className="px-2.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-slate-200 text-xs transition-colors cursor-pointer"
+                    >
+                      Deselect
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </div>
 
-        {/* Clean Add / Edit Modal (Obsidian & Sunset Rose/Gold) */}
+        {/* Clean Add / Edit Modal (Modern Minimal Slate & Deep Cyan) */}
         {isFormOpen && (
           <div className="fixed inset-0 z-60 flex items-center justify-center bg-slate-950/85 backdrop-blur-md p-4 animate-fadeIn">
-            <div className="bg-[#0e0d12] text-zinc-100 w-full max-w-lg rounded-2xl border border-amber-500/30 shadow-2xl shadow-rose-950/70 p-5 max-h-[90vh] overflow-y-auto no-scrollbar">
-              <div className="flex items-center justify-between pb-3 border-b border-rose-500/20 mb-4">
-                <h3 className="font-bold text-base bg-gradient-to-r from-amber-200 via-rose-200 to-pink-200 bg-clip-text text-transparent">
+            <div className="bg-[#141824] text-slate-100 w-full max-w-lg rounded-2xl border border-slate-700 shadow-2xl shadow-slate-950/90 p-5 max-h-[90vh] overflow-y-auto no-scrollbar">
+              <div className="flex items-center justify-between pb-3 border-b border-slate-800 mb-4">
+                <h3 className="font-bold text-base text-slate-100">
                   {editingItem ? 'Edit Collaboration Deal' : 'Add New Brand Deal'}
                 </h3>
                 <button
                   type="button"
                   onClick={() => setIsFormOpen(false)}
-                  className="p-1 rounded-lg text-zinc-400 hover:text-white hover:bg-zinc-800 transition-colors cursor-pointer"
+                  className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors cursor-pointer"
                 >
                   <X className="w-4 h-4" />
                 </button>
@@ -1625,7 +2169,7 @@ export function CollabManagerModal({ isOpen, onClose }: CollabManagerModalProps)
                 {/* Brand & Campaign */}
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="block text-zinc-300 mb-1 font-medium">
+                    <label className="block text-slate-300 mb-1 font-medium">
                       Brand Name *
                     </label>
                     <input
@@ -1634,11 +2178,11 @@ export function CollabManagerModal({ isOpen, onClose }: CollabManagerModalProps)
                       value={formBrand}
                       onChange={(e) => setFormBrand(e.target.value)}
                       placeholder="e.g. Morphic, Matiks..."
-                      className="w-full px-3 py-2 rounded-xl border border-zinc-700/80 bg-[#17151e] text-zinc-100 focus:outline-none focus:border-amber-400 focus:ring-1 focus:ring-amber-400"
+                      className="w-full px-3 py-2 rounded-xl border border-slate-700 bg-[#0f1117] text-slate-100 focus:outline-none focus:border-cyan-400 focus:ring-1 focus:ring-cyan-400"
                     />
                   </div>
                   <div>
-                    <label className="block text-zinc-300 mb-1 font-medium">
+                    <label className="block text-slate-300 mb-1 font-medium">
                       Campaign / Topic (Optional)
                     </label>
                     <input
@@ -1646,7 +2190,7 @@ export function CollabManagerModal({ isOpen, onClose }: CollabManagerModalProps)
                       value={formCampaign}
                       onChange={(e) => setFormCampaign(e.target.value)}
                       placeholder="e.g. AI Carousel, Launch..."
-                      className="w-full px-3 py-2 rounded-xl border border-zinc-700/80 bg-[#17151e] text-zinc-100 focus:outline-none focus:border-amber-400 focus:ring-1 focus:ring-amber-400"
+                      className="w-full px-3 py-2 rounded-xl border border-slate-700 bg-[#0f1117] text-slate-100 focus:outline-none focus:border-cyan-400 focus:ring-1 focus:ring-cyan-400"
                     />
                   </div>
                 </div>
@@ -1654,31 +2198,31 @@ export function CollabManagerModal({ isOpen, onClose }: CollabManagerModalProps)
                 {/* Deliverable & Collab Type */}
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="block text-zinc-300 mb-1 font-medium">
+                    <label className="block text-slate-300 mb-1 font-medium">
                       Deliverable Format
                     </label>
                     <select
                       value={formDeliverableType}
                       onChange={(e) => setFormDeliverableType(e.target.value as any)}
-                      className="w-full px-3 py-2 rounded-xl border border-zinc-700/80 bg-[#17151e] text-zinc-100 focus:outline-none"
+                      className="w-full px-3 py-2 rounded-xl border border-slate-700 bg-[#0f1117] text-slate-100 focus:outline-none"
                     >
                       {DELIVERABLE_TYPES.map((d) => (
-                        <option key={d} value={d} className="bg-[#17151e] text-zinc-100">{d}</option>
+                        <option key={d} value={d} className="bg-[#0f1117] text-slate-100">{d}</option>
                       ))}
                     </select>
                   </div>
 
                   <div>
-                    <label className="block text-zinc-300 mb-1 font-medium">
+                    <label className="block text-slate-300 mb-1 font-medium">
                       Collab Type
                     </label>
                     <select
                       value={formCollabType}
                       onChange={(e) => setFormCollabType(e.target.value as any)}
-                      className="w-full px-3 py-2 rounded-xl border border-zinc-700/80 bg-[#17151e] text-zinc-100 focus:outline-none"
+                      className="w-full px-3 py-2 rounded-xl border border-slate-700 bg-[#0f1117] text-slate-100 focus:outline-none"
                     >
                       {COLLAB_TYPES.map((t) => (
-                        <option key={t} value={t} className="bg-[#17151e] text-zinc-100">{t}</option>
+                        <option key={t} value={t} className="bg-[#0f1117] text-slate-100">{t}</option>
                       ))}
                     </select>
                   </div>
@@ -1688,7 +2232,7 @@ export function CollabManagerModal({ isOpen, onClose }: CollabManagerModalProps)
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <div className="flex items-center justify-between mb-1">
-                      <label className="block text-zinc-300 font-medium">
+                      <label className="block text-slate-300 font-medium">
                         Post / Scheduled Date *
                       </label>
                       <button
@@ -1700,7 +2244,7 @@ export function CollabManagerModal({ isOpen, onClose }: CollabManagerModalProps)
                           pDate.setDate(pDate.getDate() + 15);
                           setFormPaymentDate(pDate.toISOString().slice(0, 10));
                         }}
-                        className="text-[10px] px-1.5 py-0.5 rounded font-mono bg-zinc-800 text-amber-300 border border-amber-500/20 hover:bg-zinc-700 transition-colors cursor-pointer"
+                        className="text-[10px] px-1.5 py-0.5 rounded font-mono bg-slate-800 text-cyan-300 border border-cyan-500/20 hover:bg-slate-700 transition-colors cursor-pointer"
                       >
                         Today
                       </button>
@@ -1720,34 +2264,34 @@ export function CollabManagerModal({ isOpen, onClose }: CollabManagerModalProps)
                           }
                         }
                       }}
-                      className="w-full px-3 py-2 rounded-xl border border-zinc-700/80 bg-[#17151e] text-zinc-100 focus:outline-none"
+                      className="w-full px-3 py-2 rounded-xl border border-slate-700 bg-[#0f1117] text-slate-100 focus:outline-none"
                     />
                   </div>
 
                   <div>
-                    <label className="block text-zinc-300 mb-1 font-medium">
+                    <label className="block text-slate-300 mb-1 font-medium">
                       Invoice Sent
                     </label>
                     <select
                       value={formInvoiceSent}
                       onChange={(e) => setFormInvoiceSent(e.target.value as any)}
-                      className="w-full px-3 py-2 rounded-xl border border-zinc-700/80 bg-[#17151e] text-zinc-100 focus:outline-none"
+                      className="w-full px-3 py-2 rounded-xl border border-slate-700 bg-[#0f1117] text-slate-100 focus:outline-none"
                     >
-                      <option value="No" className="bg-[#17151e]">No</option>
-                      <option value="Yes" className="bg-[#17151e]">Yes</option>
-                      <option value="Pending" className="bg-[#17151e]">Pending</option>
+                      <option value="No" className="bg-[#0f1117]">No</option>
+                      <option value="Yes" className="bg-[#0f1117]">Yes</option>
+                      <option value="Pending" className="bg-[#0f1117]">Pending</option>
                     </select>
                   </div>
                 </div>
 
                 {/* Likes & Engagement Management (Prince / Shivani / Others) */}
-                <div className="p-3.5 bg-gradient-to-r from-amber-500/10 via-rose-500/5 to-transparent rounded-2xl border border-amber-500/30 space-y-2.5 shadow-xs">
+                <div className="p-3.5 bg-[#0f1117] rounded-2xl border border-slate-700 space-y-2.5 shadow-xs">
                   <div className="flex items-center justify-between">
-                    <label className="flex items-center gap-1.5 text-xs font-bold text-amber-300">
-                      <Heart className="w-3.5 h-3.5 text-rose-400 fill-rose-400" />
+                    <label className="flex items-center gap-1.5 text-xs font-bold text-cyan-300">
+                      <Heart className="w-3.5 h-3.5 text-cyan-400 fill-cyan-400" />
                       <span>Post Likes &amp; Engagement Handler</span>
                     </label>
-                    <span className="text-[10px] text-zinc-400 font-normal">
+                    <span className="text-[10px] text-slate-400 font-normal">
                       For calculating payouts
                     </span>
                   </div>
@@ -1776,8 +2320,8 @@ export function CollabManagerModal({ isOpen, onClose }: CollabManagerModalProps)
                           }}
                           className={`py-1.5 px-2 rounded-xl text-[11px] font-bold transition-all border cursor-pointer flex items-center justify-center gap-1 ${
                             isActive
-                              ? 'bg-gradient-to-r from-amber-500 to-rose-500 text-slate-950 border-amber-400 shadow-xs'
-                              : 'bg-[#181620] text-zinc-300 border-zinc-700/80 hover:bg-zinc-800'
+                              ? 'bg-cyan-500 text-slate-950 border-cyan-400 shadow-xs'
+                              : 'bg-[#141824] text-slate-300 border-slate-700 hover:bg-slate-800'
                           }`}
                         >
                           {btn.label}
@@ -1789,7 +2333,7 @@ export function CollabManagerModal({ isOpen, onClose }: CollabManagerModalProps)
                   {/* If "Other" is selected, show name input */}
                   {formLikeHandlerType === 'Other' && (
                     <div>
-                      <label className="block text-[10px] text-zinc-400 mb-1">
+                      <label className="block text-[10px] text-slate-400 mb-1">
                         Handler Name *
                       </label>
                       <input
@@ -1798,107 +2342,142 @@ export function CollabManagerModal({ isOpen, onClose }: CollabManagerModalProps)
                         value={formCustomHandlerName}
                         onChange={(e) => setFormCustomHandlerName(e.target.value)}
                         placeholder="e.g. Rahul, Akash, Aman..."
-                        className="w-full px-3 py-1.5 rounded-xl border border-zinc-700/80 bg-[#17151e] text-zinc-100 text-xs focus:outline-none focus:border-amber-400"
+                        className="w-full px-3 py-1.5 rounded-xl border border-slate-700 bg-[#141824] text-slate-100 text-xs focus:outline-none focus:border-cyan-400"
                       />
                     </div>
                   )}
 
-                  {/* Likes Management Cost / Payout */}
+                  {/* Likes Management Cost / Payout & Payout Status */}
                   {formLikeHandlerType !== 'None' && (
-                    <div className="pt-1">
-                      <div className="flex items-center justify-between mb-1">
-                        <label className="block text-[11px] text-zinc-300 font-medium">
-                          Likes Fee / Payout (₹)
+                    <div className="pt-1 space-y-2.5">
+                      <div>
+                        <div className="flex items-center justify-between mb-1">
+                          <label className="block text-[11px] text-slate-300 font-medium">
+                            Likes Fee / Payout (₹)
+                          </label>
+                          <div className="flex items-center gap-1.5">
+                            {[100, 200, 600].map((preset) => (
+                              <button
+                                key={preset}
+                                type="button"
+                                onClick={() => {
+                                  setFormLikeCost(preset);
+                                  if (formSpending === 0 || formSpending === formLikeCost) {
+                                    setFormSpending(preset);
+                                  }
+                                }}
+                                className={`px-2 py-0.5 text-[10px] font-mono rounded-lg font-bold transition-all cursor-pointer ${
+                                  formLikeCost === preset
+                                    ? 'bg-cyan-500 text-slate-950 shadow-xs'
+                                    : 'bg-slate-800 text-slate-300 hover:bg-slate-700 border border-slate-700'
+                                }`}
+                              >
+                                ₹{preset}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                        <input
+                          type="number"
+                          min="0"
+                          value={formLikeCost}
+                          onChange={(e) => {
+                            const val = Number(e.target.value);
+                            setFormLikeCost(val);
+                            if (formSpending === 0 || formSpending === formLikeCost) {
+                              setFormSpending(val);
+                            }
+                          }}
+                          className="w-full px-2.5 py-1.5 rounded-xl border border-slate-700 bg-[#141824] font-mono text-xs text-cyan-300 focus:outline-none"
+                        />
+                      </div>
+
+                      {/* Handler Payout Status: Paid vs Pending */}
+                      <div>
+                        <label className="block text-[11px] text-slate-300 mb-1 font-medium">
+                          Handler Payout Status
                         </label>
-                        <div className="flex items-center gap-1.5">
-                          {[100, 200, 600].map((preset) => (
-                            <button
-                              key={preset}
-                              type="button"
-                              onClick={() => {
-                                setFormLikeCost(preset);
-                                if (formSpending === 0 || formSpending === formLikeCost) {
-                                  setFormSpending(preset);
-                                }
-                              }}
-                              className={`px-2 py-0.5 text-[10px] font-mono rounded-lg font-bold transition-all cursor-pointer ${
-                                formLikeCost === preset
-                                  ? 'bg-gradient-to-r from-amber-500 to-rose-500 text-slate-950 shadow-xs'
-                                  : 'bg-zinc-800 text-zinc-300 hover:bg-amber-500/20 hover:text-amber-300 border border-zinc-700'
-                              }`}
-                            >
-                              ₹{preset}
-                            </button>
-                          ))}
+                        <div className="grid grid-cols-2 gap-2">
+                          <button
+                            type="button"
+                            onClick={() => setFormLikePaymentStatus('Pending')}
+                            className={`py-1.5 px-3 rounded-xl text-xs font-bold transition-all border cursor-pointer flex items-center justify-center gap-1.5 ${
+                              formLikePaymentStatus === 'Pending'
+                                ? 'bg-amber-500/20 text-amber-300 border-amber-400 shadow-xs'
+                                : 'bg-[#141824] text-slate-400 border-slate-700 hover:bg-slate-800'
+                            }`}
+                          >
+                            <Clock className="w-3.5 h-3.5" />
+                            <span>⏳ Pending (To Pay)</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setFormLikePaymentStatus('Paid')}
+                            className={`py-1.5 px-3 rounded-xl text-xs font-bold transition-all border cursor-pointer flex items-center justify-center gap-1.5 ${
+                              formLikePaymentStatus === 'Paid'
+                                ? 'bg-emerald-500/20 text-emerald-300 border-emerald-400 shadow-xs'
+                                : 'bg-[#141824] text-slate-400 border-slate-700 hover:bg-slate-800'
+                            }`}
+                          >
+                            <Check className="w-3.5 h-3.5 stroke-[2.5]" />
+                            <span>✅ Paid (Settled)</span>
+                          </button>
                         </div>
                       </div>
-                      <input
-                        type="number"
-                        min="0"
-                        value={formLikeCost}
-                        onChange={(e) => {
-                          const val = Number(e.target.value);
-                          setFormLikeCost(val);
-                          if (formSpending === 0 || formSpending === formLikeCost) {
-                            setFormSpending(val);
-                          }
-                        }}
-                        className="w-full px-2.5 py-1.5 rounded-xl border border-zinc-700/80 bg-[#17151e] font-mono text-xs text-amber-300 focus:outline-none"
-                      />
                     </div>
                   )}
                 </div>
 
                 {/* Financials: Base Pay, Bonus, Spend */}
-                <div className="p-3.5 bg-[#14121a] rounded-2xl border border-zinc-800 space-y-2">
+                <div className="p-3.5 bg-[#0f1117] rounded-2xl border border-slate-700 space-y-2">
                   <div className="grid grid-cols-3 gap-3">
                     <div>
-                      <label className="block text-[11px] text-zinc-400 mb-1 font-medium">
+                      <label className="block text-[11px] text-slate-400 mb-1 font-medium">
                         Base Pay (₹)
                       </label>
                       <input
                         type="number"
                         value={formBasePay}
                         onChange={(e) => setFormBasePay(Number(e.target.value))}
-                        className="w-full px-2.5 py-1.5 rounded-lg border border-zinc-700 bg-[#1b1822] font-mono text-xs text-zinc-100 focus:outline-none"
+                        className="w-full px-2.5 py-1.5 rounded-lg border border-slate-700 bg-[#141824] font-mono text-xs text-slate-100 focus:outline-none"
                       />
                     </div>
 
                     <div>
-                      <label className="block text-[11px] text-zinc-400 mb-1 font-medium">
+                      <label className="block text-[11px] text-slate-400 mb-1 font-medium">
                         Bonus (₹)
                       </label>
                       <input
                         type="number"
                         value={formBonus}
                         onChange={(e) => setFormBonus(Number(e.target.value))}
-                        className="w-full px-2.5 py-1.5 rounded-lg border border-zinc-700 bg-[#1b1822] font-mono text-xs text-amber-400 focus:outline-none"
+                        className="w-full px-2.5 py-1.5 rounded-lg border border-slate-700 bg-[#141824] font-mono text-xs text-cyan-400 focus:outline-none"
                       />
                     </div>
 
                     <div>
-                      <label className="block text-[11px] text-zinc-400 mb-1 font-medium">
+                      <label className="block text-[11px] text-slate-400 mb-1 font-medium">
                         Spend (₹)
                       </label>
                       <input
                         type="number"
                         value={formSpending}
                         onChange={(e) => setFormSpending(Number(e.target.value))}
-                        className="w-full px-2.5 py-1.5 rounded-lg border border-zinc-700 bg-[#1b1822] font-mono text-xs text-rose-400 focus:outline-none"
+                        className="w-full px-2.5 py-1.5 rounded-lg border border-slate-700 bg-[#141824] font-mono text-xs text-slate-300 focus:outline-none"
                       />
                     </div>
                   </div>
 
-                  <div className="flex items-center justify-between text-[11px] pt-1.5 text-zinc-400 border-t border-zinc-800/80">
-                    <span>Total Fee: <b className="text-amber-300">₹{(Number(formBasePay || 0) + Number(formBonus || 0)).toLocaleString('en-IN')}</b></span>
-                    <span>Net Profit: <b className="bg-gradient-to-r from-amber-300 to-rose-300 bg-clip-text text-transparent font-bold">₹{(Number(formBasePay || 0) + Number(formBonus || 0) - Number(formSpending || 0)).toLocaleString('en-IN')}</b></span>
+                  <div className="flex items-center justify-between text-[11px] pt-1.5 text-slate-400 border-t border-slate-800">
+                    <span>Total Fee: <b className="text-cyan-400 font-mono">₹{(Number(formBasePay || 0) + Number(formBonus || 0)).toLocaleString('en-IN')}</b></span>
+                    <span>Net Profit: <b className="text-cyan-300 font-mono font-bold">₹{(Number(formBasePay || 0) + Number(formBonus || 0) - Number(formSpending || 0)).toLocaleString('en-IN')}</b></span>
                   </div>
                 </div>
 
                 {/* Status, Payment Date, Payment Mode */}
                 <div className="grid grid-cols-3 gap-3">
                   <div>
-                    <label className="block text-zinc-300 mb-1 font-medium">
+                    <label className="block text-slate-300 mb-1 font-medium">
                       Payment Status
                     </label>
                     <select
@@ -1906,18 +2485,18 @@ export function CollabManagerModal({ isOpen, onClose }: CollabManagerModalProps)
                       onChange={(e) => setFormStatus(e.target.value as any)}
                       className={`w-full px-2.5 py-2 rounded-xl border font-bold text-xs focus:outline-none transition-colors ${
                         formStatus === 'Paid'
-                          ? 'bg-emerald-500/15 border-emerald-500/35 text-emerald-300'
-                          : 'bg-amber-500/15 border-amber-500/35 text-amber-300'
+                          ? 'bg-emerald-500/15 border-emerald-500/30 text-emerald-300'
+                          : 'bg-amber-500/15 border-amber-500/30 text-amber-300'
                       }`}
                     >
-                      <option value="Pending" className="bg-[#17151e] text-amber-300">⏳ Pending (No)</option>
-                      <option value="Paid" className="bg-[#17151e] text-emerald-300">✅ Paid</option>
+                      <option value="Pending" className="bg-[#0f1117] text-amber-300">⏳ Pending (No)</option>
+                      <option value="Paid" className="bg-[#0f1117] text-emerald-300">✅ Paid</option>
                     </select>
                   </div>
 
                   <div>
                     <div className="flex items-center justify-between mb-1">
-                      <label className="block text-zinc-300 font-medium">
+                      <label className="block text-slate-300 font-medium">
                         Payment Date
                       </label>
                       <button
@@ -1929,7 +2508,7 @@ export function CollabManagerModal({ isOpen, onClose }: CollabManagerModalProps)
                             setFormPaymentDate(base.toISOString().slice(0, 10));
                           }
                         }}
-                        className="text-[9px] px-1.5 py-0.5 rounded font-mono bg-zinc-800 text-amber-300 border border-amber-500/25 hover:bg-zinc-700 transition-colors cursor-pointer"
+                        className="text-[9px] px-1.5 py-0.5 rounded font-mono bg-slate-800 text-cyan-300 border border-slate-700 hover:bg-slate-700 transition-colors cursor-pointer"
                         title="Set to 15 days after post date"
                       >
                         +15d
@@ -1939,21 +2518,21 @@ export function CollabManagerModal({ isOpen, onClose }: CollabManagerModalProps)
                       type="date"
                       value={formPaymentDate}
                       onChange={(e) => setFormPaymentDate(e.target.value)}
-                      className="w-full px-2.5 py-2 rounded-xl border border-zinc-700/80 bg-[#17151e] text-zinc-100 focus:outline-none"
+                      className="w-full px-2.5 py-2 rounded-xl border border-slate-700 bg-[#0f1117] text-slate-100 focus:outline-none"
                     />
                   </div>
 
                   <div>
-                    <label className="block text-zinc-300 mb-1 font-medium">
+                    <label className="block text-slate-300 mb-1 font-medium">
                       Payment Mode
                     </label>
                     <select
                       value={formPaymentMode}
                       onChange={(e) => setFormPaymentMode(e.target.value as any)}
-                      className="w-full px-2.5 py-2 rounded-xl border border-zinc-700/80 bg-[#17151e] text-zinc-100 focus:outline-none"
+                      className="w-full px-2.5 py-2 rounded-xl border border-slate-700 bg-[#0f1117] text-slate-100 focus:outline-none"
                     >
                       {PAYMENT_MODES.map((m) => (
-                        <option key={m} value={m} className="bg-[#17151e]">{m}</option>
+                        <option key={m} value={m} className="bg-[#0f1117]">{m}</option>
                       ))}
                     </select>
                   </div>
@@ -1961,7 +2540,7 @@ export function CollabManagerModal({ isOpen, onClose }: CollabManagerModalProps)
 
                 {/* Content Link */}
                 <div>
-                  <label className="block text-zinc-300 mb-1 font-medium">
+                  <label className="block text-slate-300 mb-1 font-medium">
                     LinkedIn Post URL (Optional)
                   </label>
                   <input
@@ -1969,13 +2548,13 @@ export function CollabManagerModal({ isOpen, onClose }: CollabManagerModalProps)
                     value={formPostUrl}
                     onChange={(e) => setFormPostUrl(e.target.value)}
                     placeholder="https://linkedin.com/posts/..."
-                    className="w-full px-3 py-2 rounded-xl border border-zinc-700/80 bg-[#17151e] text-zinc-100 focus:outline-none"
+                    className="w-full px-3 py-2 rounded-xl border border-slate-700 bg-[#0f1117] text-slate-100 focus:outline-none focus:border-cyan-400"
                   />
                 </div>
 
                 {/* Notes */}
                 <div>
-                  <label className="block text-zinc-300 mb-1 font-medium">
+                  <label className="block text-slate-300 mb-1 font-medium">
                     Notes &amp; Requirements
                   </label>
                   <textarea
@@ -1983,7 +2562,7 @@ export function CollabManagerModal({ isOpen, onClose }: CollabManagerModalProps)
                     value={formNotes}
                     onChange={(e) => setFormNotes(e.target.value)}
                     placeholder="Deliverable details, instructions..."
-                    className="w-full px-3 py-2 rounded-xl border border-zinc-700/80 bg-[#17151e] text-zinc-100 focus:outline-none resize-none"
+                    className="w-full px-3 py-2 rounded-xl border border-slate-700 bg-[#0f1117] text-slate-100 focus:outline-none focus:border-cyan-400 resize-none"
                   />
                 </div>
 
@@ -1991,13 +2570,13 @@ export function CollabManagerModal({ isOpen, onClose }: CollabManagerModalProps)
                   <button
                     type="button"
                     onClick={() => setIsFormOpen(false)}
-                    className="px-4 py-2 rounded-xl border border-zinc-700 text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200 transition-colors"
+                    className="px-4 py-2 rounded-xl border border-slate-700 text-slate-400 hover:bg-slate-800 hover:text-slate-200 transition-colors"
                   >
                     Cancel
                   </button>
                   <button
                     type="submit"
-                    className="px-5 py-2 rounded-xl bg-gradient-to-r from-amber-500 via-rose-500 to-pink-600 hover:from-amber-400 hover:via-rose-400 hover:to-pink-500 text-slate-950 font-bold text-xs transition-all cursor-pointer shadow-md shadow-rose-950/50"
+                    className="px-5 py-2 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold text-xs transition-all cursor-pointer shadow-sm shadow-cyan-950/40"
                   >
                     {editingItem ? 'Save Changes' : 'Save Brand Deal'}
                   </button>

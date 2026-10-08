@@ -21,6 +21,7 @@ export const INITIAL_COLLABS: CollabItem[] = [
     netProfit: 1700,
     likeHandler: 'Prince',
     likeCost: 300,
+    likePaymentStatus: 'Paid',
     invoiceSent: 'No',
     status: 'Paid',
     paymentReceivedDate: '2026-07-17',
@@ -69,6 +70,9 @@ export const INITIAL_COLLABS: CollabItem[] = [
     amount: 1500,
     spending: 300,
     netProfit: 1200,
+    likeHandler: 'Shivani',
+    likeCost: 300,
+    likePaymentStatus: 'Paid',
     invoiceSent: 'Yes',
     status: 'Paid',
     paymentReceivedDate: '2026-07-22',
@@ -161,6 +165,9 @@ export const INITIAL_COLLABS: CollabItem[] = [
     amount: 4940,
     spending: 600,
     netProfit: 4340,
+    likeHandler: 'Prince',
+    likeCost: 600,
+    likePaymentStatus: 'Paid',
     invoiceSent: 'Yes',
     status: 'Paid',
     paymentReceivedDate: '2026-07-22',
@@ -184,6 +191,9 @@ export const INITIAL_COLLABS: CollabItem[] = [
     amount: 1500,
     spending: 300,
     netProfit: 1200,
+    likeHandler: 'Shivani',
+    likeCost: 300,
+    likePaymentStatus: 'Paid',
     invoiceSent: 'Yes',
     status: 'Paid',
     paymentReceivedDate: '2026-07-23',
@@ -230,6 +240,9 @@ export const INITIAL_COLLABS: CollabItem[] = [
     amount: 1800,
     spending: 250,
     netProfit: 1550,
+    likeHandler: 'Shivani',
+    likeCost: 250,
+    likePaymentStatus: 'Pending',
     invoiceSent: 'Yes',
     status: 'Pending',
     paymentMode: 'UPI',
@@ -252,6 +265,9 @@ export const INITIAL_COLLABS: CollabItem[] = [
     amount: 1500,
     spending: 100,
     netProfit: 1400,
+    likeHandler: 'Other',
+    likeCost: 100,
+    likePaymentStatus: 'Pending',
     invoiceSent: 'Yes',
     status: 'Pending',
     paymentMode: 'UPI',
@@ -299,6 +315,9 @@ export const INITIAL_COLLABS: CollabItem[] = [
     amount: 6500,
     spending: 350,
     netProfit: 6150,
+    likeHandler: 'Prince',
+    likeCost: 350,
+    likePaymentStatus: 'Paid',
     invoiceSent: 'Yes',
     status: 'Paid',
     paymentReceivedDate: '2026-08-05',
@@ -344,6 +363,9 @@ export const INITIAL_COLLABS: CollabItem[] = [
     amount: 3000,
     spending: 300,
     netProfit: 2700,
+    likeHandler: 'Shivani',
+    likeCost: 300,
+    likePaymentStatus: 'Pending',
     invoiceSent: 'Yes',
     status: 'Pending',
     paymentMode: 'UPI',
@@ -366,6 +388,9 @@ export const INITIAL_COLLABS: CollabItem[] = [
     amount: 2500,
     spending: 290,
     netProfit: 2210,
+    likeHandler: 'Other',
+    likeCost: 290,
+    likePaymentStatus: 'Pending',
     invoiceSent: 'Yes',
     status: 'Pending',
     paymentMode: 'UPI',
@@ -388,6 +413,9 @@ export const INITIAL_COLLABS: CollabItem[] = [
     amount: 3500,
     spending: 460,
     netProfit: 3040,
+    likeHandler: 'Prince',
+    likeCost: 460,
+    likePaymentStatus: 'Paid',
     invoiceSent: 'Yes',
     status: 'Paid',
     paymentReceivedDate: '2026-08-20',
@@ -435,6 +463,9 @@ export const INITIAL_COLLABS: CollabItem[] = [
     amount: 1000,
     spending: 60,
     netProfit: 940,
+    likeHandler: 'Prince',
+    likeCost: 60,
+    likePaymentStatus: 'Paid',
     invoiceSent: 'Yes',
     status: 'Paid',
     paymentReceivedDate: '2026-09-04',
@@ -601,20 +632,51 @@ export function calculateAllMonthsSummary(items: CollabItem[]): CollabMonthSumma
 export function calculateLikeHandlersStats(items: CollabItem[], monthFilter = 'all') {
   const filtered = monthFilter === 'all' ? items : items.filter((i) => i.month === monthFilter);
 
-  const statsMap: Record<string, { postsCount: number; totalCost: number }> = {};
+  const statsMap: Record<
+    string,
+    {
+      postsCount: number;
+      totalCost: number;
+      pendingCost: number;
+      paidCost: number;
+      pendingPostsCount: number;
+      paidPostsCount: number;
+    }
+  > = {};
+
   let totalPostsWithLikes = 0;
   let totalLikesCost = 0;
+  let totalLikesPending = 0;
+  let totalLikesPaid = 0;
 
   for (const item of filtered) {
     if (item.likeHandler && item.likeHandler.trim() && item.likeHandler.toLowerCase() !== 'none') {
       const handlerName = item.likeHandler.trim();
       const cost = item.likeCost !== undefined && item.likeCost !== null ? Number(item.likeCost) : Number(item.spending || 0);
+      const isPaid = item.likePaymentStatus === 'Paid';
 
       if (!statsMap[handlerName]) {
-        statsMap[handlerName] = { postsCount: 0, totalCost: 0 };
+        statsMap[handlerName] = {
+          postsCount: 0,
+          totalCost: 0,
+          pendingCost: 0,
+          paidCost: 0,
+          pendingPostsCount: 0,
+          paidPostsCount: 0,
+        };
       }
       statsMap[handlerName].postsCount += 1;
       statsMap[handlerName].totalCost += cost;
+
+      if (isPaid) {
+        statsMap[handlerName].paidCost += cost;
+        statsMap[handlerName].paidPostsCount += 1;
+        totalLikesPaid += cost;
+      } else {
+        statsMap[handlerName].pendingCost += cost;
+        statsMap[handlerName].pendingPostsCount += 1;
+        totalLikesPending += cost;
+      }
 
       totalPostsWithLikes += 1;
       totalLikesCost += cost;
@@ -622,23 +684,33 @@ export function calculateLikeHandlersStats(items: CollabItem[], monthFilter = 'a
   }
 
   // Aggregate Prince & Shivani specifically (case-insensitive)
-  let princeCount = 0;
-  let princeCost = 0;
-  let shivaniCount = 0;
-  let shivaniCost = 0;
-  let othersCount = 0;
-  let othersCost = 0;
+  const princeStat = { name: 'Prince', postsCount: 0, totalCost: 0, pendingCost: 0, paidCost: 0, pendingPostsCount: 0, paidPostsCount: 0 };
+  const shivaniStat = { name: 'Shivani', postsCount: 0, totalCost: 0, pendingCost: 0, paidCost: 0, pendingPostsCount: 0, paidPostsCount: 0 };
+  const othersStat = { name: 'Others / New Guy', postsCount: 0, totalCost: 0, pendingCost: 0, paidCost: 0, pendingPostsCount: 0, paidPostsCount: 0 };
 
   for (const [name, data] of Object.entries(statsMap)) {
-    if (name.toLowerCase().includes('prince')) {
-      princeCount += data.postsCount;
-      princeCost += data.totalCost;
-    } else if (name.toLowerCase().includes('shivani')) {
-      shivaniCount += data.postsCount;
-      shivaniCost += data.totalCost;
+    const lower = name.toLowerCase();
+    if (lower.includes('prince')) {
+      princeStat.postsCount += data.postsCount;
+      princeStat.totalCost += data.totalCost;
+      princeStat.pendingCost += data.pendingCost;
+      princeStat.paidCost += data.paidCost;
+      princeStat.pendingPostsCount += data.pendingPostsCount;
+      princeStat.paidPostsCount += data.paidPostsCount;
+    } else if (lower.includes('shivani')) {
+      shivaniStat.postsCount += data.postsCount;
+      shivaniStat.totalCost += data.totalCost;
+      shivaniStat.pendingCost += data.pendingCost;
+      shivaniStat.paidCost += data.paidCost;
+      shivaniStat.pendingPostsCount += data.pendingPostsCount;
+      shivaniStat.paidPostsCount += data.paidPostsCount;
     } else {
-      othersCount += data.postsCount;
-      othersCost += data.totalCost;
+      othersStat.postsCount += data.postsCount;
+      othersStat.totalCost += data.totalCost;
+      othersStat.pendingCost += data.pendingCost;
+      othersStat.paidCost += data.paidCost;
+      othersStat.pendingPostsCount += data.pendingPostsCount;
+      othersStat.paidPostsCount += data.paidPostsCount;
     }
   }
 
@@ -646,15 +718,21 @@ export function calculateLikeHandlersStats(items: CollabItem[], monthFilter = 'a
     name,
     postsCount: data.postsCount,
     totalCost: data.totalCost,
+    pendingCost: data.pendingCost,
+    paidCost: data.paidCost,
+    pendingPostsCount: data.pendingPostsCount,
+    paidPostsCount: data.paidPostsCount,
   }));
 
   return {
     handlers: handlersList,
     totalPostsWithLikes,
     totalLikesCost,
-    prince: { name: 'Prince', postsCount: princeCount, totalCost: princeCost },
-    shivani: { name: 'Shivani', postsCount: shivaniCount, totalCost: shivaniCost },
-    others: { name: 'Others / New Guy', postsCount: othersCount, totalCost: othersCost },
+    totalLikesPending,
+    totalLikesPaid,
+    prince: princeStat,
+    shivani: shivaniStat,
+    others: othersStat,
   };
 }
 

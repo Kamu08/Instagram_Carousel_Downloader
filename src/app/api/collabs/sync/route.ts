@@ -82,6 +82,7 @@ export async function POST(req: NextRequest) {
           NetProfit: ((c.basePay || 0) + (c.bonus || 0) || c.amount || 0) - (c.spending || 0),
           LikeHandler: c.likeHandler || 'None',
           LikeCost: c.likeCost !== undefined ? c.likeCost : (c.spending || 0),
+          LikePaymentStatus: c.likePaymentStatus || 'Pending',
           InvoiceSent: c.invoiceSent || 'Yes',
           PaymentStatus: c.status || 'Pending',
           PaymentDate: c.paymentReceivedDate || '',
